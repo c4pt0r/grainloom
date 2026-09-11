@@ -26,7 +26,7 @@ with tempfile.TemporaryDirectory(prefix="grainloom-dsp-") as tmp:
     shutil.copy(root / "lib/Engine_Grainloom.sc", classes / "Engine_Grainloom.sc")
     config = tmp / "sclang.yaml"
     config.write_text(f"includePaths:\n  - {classes}\nexcludePaths: []\n")
-    source, output, printed = [tmp / n for n in ("source.wav", "out.wav", "print.wav")]
+    source, output, printed = [tmp / n for n in ("source.wav", "out.wav", "loop.wav")]
     with wave.open(str(source), "wb") as w:
         w.setparams((1, 2, 48000, 0, "NONE", "not compressed"))
         w.writeframes(b"".join(struct.pack("<h", int(12000 * math.sin(
@@ -38,9 +38,11 @@ Routine { e.alloc }.play;
 Routine {
     var voice, rec, score, options;
     0.5.wait;
-    voice = SynthDescLib.global.at(\grainloom_voice);
-    rec = SynthDescLib.global.at(\grainloom_record);
-    if(voice.isNil or: {rec.isNil}) { "MISSING_SYNTHDEF".postln; 1.exit };
+    voice = SynthDescLib.global.at(\grainloom_loop_voice);
+    rec = SynthDescLib.global.at(\grainloom_loop_record);
+    if(voice.isNil or: {rec.isNil}) {
+        "MISSING_SYNTHDEF".postln; 1.exit
+    };
     "GRAINLOOM_SYNTHDEF_OK".postln;
     options = ServerOptions.new.numOutputBusChannels_(2).numInputBusChannels_(0);
     Score.program = @SCSYNTH@;
@@ -49,18 +51,21 @@ Routine {
         [0, [\d_recv, rec.def.asBytes]],
         [0, [\b_allocRead,0,@SOURCE@]],
         [0, [\b_alloc,1,48000,1]],
-        [0.1, [\s_new,\grainloom_voice,1000,0,0,
-            \buf,0,\out,0,\tapOut,2,\active,1]],
-        [1, [\n_set,1000,\loss,0.8,\wow,1,\flutter,1,\dropout,0.5]],
-        [1, [\s_new,\grainloom_record,1001,3,1000,\buf,1,\inL,2,\inR,3]],
-        [2.05, [\n_free,1001]],
-        [2.1, [\b_write,1,@PRINT@,"WAV","int16",48000,0,0]],
-        [2.2, [\n_set,1000,\buf,1,\t_reset,1,\size,0.4,
-            \density,40,\crush,1,\glitch,1,\rate,-2]],
-        [3, [\n_set,1000,\freeze,1,\reverb,0.8]],
-        [4, [\n_set,1000,\active,0]],
-        [5, [\n_free,1000]],
-        [5.1, [\c_set,0,0]]
+        [0.1, [\s_new,\grainloom_loop_voice,1000,0,0,
+            \buf,0,\out,2,\inL,4,\inR,5,
+            \active,1,\mix,1,\sample_gain,1,\gain,1]],
+        [0.1, [\s_new,\grainloom_loop_record,1001,3,1000,
+            \buf,1,\inL,2,\inR,3,\feedback,0]],
+        [1.15, [\n_free,1001]],
+        [1.16, [\n_free,1000]],
+        [1.2, [\b_write,1,@PRINT@,"WAV","int16",48000,0,0]],
+        [1.3, [\s_new,\grainloom_loop_voice,1002,0,0,
+            \buf,1,\out,0,\inL,4,\inR,5,
+            \active,1,\mix,1,\sample_gain,1,\gain,0.75]],
+        [2, [\n_set,1002,\rate,-1]],
+        [2.8, [\n_set,1002,\active,0]],
+        [3, [\n_free,1002]],
+        [3.1, [\c_set,0,0]]
     ]);
     score.recordNRT(outputFilePath:@OUTPUT@,sampleRate:48000,
         headerFormat:"WAV",sampleFormat:"int16",options:options,
@@ -88,4 +93,4 @@ Routine {
         assert 0.0001 < rms < 0.5, (path.name, rms)
         assert peak < 0.99, (path.name, peak)
         print(f"PASS: {path.name}, peak={peak:.4f}, RMS={rms:.4f}")
-    print("PASS: engine class/SynthDef compilation, NRT DSP, internal print, reverse/extreme controls")
+    print("PASS: minimal engine compilation, feedback recorder, loop replay, reverse rate")

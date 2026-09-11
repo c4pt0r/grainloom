@@ -1,172 +1,183 @@
--- grainloom: loop / grain / decay
--- v0.1.0 experimental | SPDX-License-Identifier: MIT
--- E1 page, E2/E3 edit; K2 record/stop, K3 freeze
--- hold K1: K2 load, K3 play/pause
+-- grainloom: a minimal continuous feedback loop machine
+-- SPDX-License-Identifier: MIT
 engine.name = 'Grainloom'
 
 local cs = require 'controlspec'
-local fileselect = require 'fileselect'
 local util = require 'util'
+
+local function pid(id) return 'grainloom_'..id end
+local function pget(id) return params:get(pid(id)) end
+
 local pages = {
-  {'GRAIN', 'size', 'density'}, {'SCAN', 'position', 'scan'},
-  {'TAPE', 'rate', 'blend'}, {'SCATTER', 'spray', 'glitch'},
-  {'PATINA', 'crush', 'tone'}, {'SPACE', 'reverb', 'room'},
-  {'TAPE LOSS', 'loss', 'dropout'}, {'INSTABILITY', 'wow', 'flutter'},
-  {'LEVEL', 'gain', 'capture_length'}
+  {'LOOP', 'capture_length', 'feedback'},
+  {'TAPE', 'rate', 'mix'},
+  {'SLICE', 'slice_size', 'slice_density'},
+  {'SLICE PLAY', 'slice_speed', 'slice_reverse'},
+  {'LEVEL', 'slice_mix', 'sample_gain'}
 }
-local page, shift, frozen, playing = 1, false, false, false
-local state, seconds, message = 0, 0, 'K2 record / K1+K2 load'
-local state_poll, time_poll, refresh
-local selecting, pending = false, false
-local generations, bouncing = 0, false
+
+local page = 1
+local state = 0 -- 0 empty, 1 write frozen, 3 allocating, 4 recording
+local seconds = 0
 local revision = 0
+local pending = true
+local writing = true
+local playing = true
+local message = 'starting loop...'
+local state_poll, time_poll, refresh, resize_clock
 
-local function resample()
-  if state ~= 1 or pending then return end
-  pending = true; bouncing = true
-  message = 'printing next generation'
-  engine.capture(math.max(0.1,seconds),1)
+local function control(id, name, min, max, warp, default, units, action)
+  params:add_control(pid(id), name,
+    cs.new(min, max, warp, 0, default, units or ''))
+  if action then params:set_action(pid(id), action) end
 end
 
-local function control(id, name, min, max, warp, default, units)
-  params:add_control(id, name, cs.new(min,max,warp,0,default,units or ''))
-  if id ~= 'capture_length' then
-    params:set_action(id, function(v) engine[id](v) end)
-  end
-end
-
-local function load_sample()
-  if state == 2 or state == 3 or pending then return end
-  selecting = true
-  shift = false
-  fileselect.enter(_path.audio, function(path)
-    selecting = false
-    if path == 'cancel' then return end
-    local channels, frames, sr = audio.file_info(path)
-    if not channels or channels < 1 or not frames or frames < 2 or not sr or sr <= 0 then
-      message = 'cannot read audio'; return
-    end
-    pending = true
-    generations = 0
-    message = 'loading...'
-    engine.read(path)
-  end, 'audio')
+local function restart_loop(length)
+  pending = true
+  writing = true
+  playing = true
+  message = 'resizing loop...'
+  engine.liveLoop(1, length)
 end
 
 function init()
   params:add_separator('grainloom')
-  control('size','grain size',0.02,0.4,'exp',0.12,'s')
-  control('density','density',2,40,'exp',12,'Hz')
-  control('position','position',0,1,'lin',0)
-  control('scan','scan speed',-2,2,'lin',1)
-  control('rate','tape / grain rate',-2,2,'lin',1)
-  control('blend','grain blend',0,1,'lin',0.7)
-  control('spray','position spray',0,0.25,'lin',0.02)
-  control('glitch','stutter chance',0,1,'lin',0)
-  control('crush','lo-fi',0,1,'lin',0)
-  control('tone','low-pass',200,18000,'exp',10000,'Hz')
-  control('reverb','reverb mix',0,1,'lin',0.25)
-  control('room','reverb room',0,0.98,'lin',0.8)
-  control('gain','output',0,1,'lin',0.65)
-  control('loss','generation loss',0,1,'lin',0.2)
-  control('wow','wow',0,1,'lin',0.15)
-  control('flutter','flutter',0,1,'lin',0.1)
-  control('dropout','dropout',0,1,'lin',0)
-  control('capture_length','max recording',0.1,30,'lin',8,'s')
-  params:add_trigger('load_sample','load sample (first 30s)')
-  params:set_action('load_sample',load_sample)
-  params:add_trigger('resample','print next generation')
-  params:set_action('resample',resample)
-  -- Bang only our controls: do not invoke unrelated system parameter actions.
-  for _,p in ipairs(pages) do
-    for i=2,3 do
-      if p[i] ~= 'capture_length' then engine[p[i]](params:get(p[i])) end
-    end
+
+  control('capture_length', 'recording time', 0.1, 30, 'lin', 2.5, 's')
+  control('feedback', 'feedback', 0, 0.98, 'lin', 0.72, '',
+    function(v) engine.feedback(v) end)
+  control('rate', 'tape speed', -2, 2, 'lin', 1, 'x',
+    function(v) engine.rate(v) end)
+  control('mix', 'input / sample mix', 0, 1, 'lin', 0.8, '',
+    function(v) engine.mix(v) end)
+  params:lookup_param(pid('mix')).formatter = function(param)
+    local sample = math.floor(param:get()*10+0.5)
+    return (10-sample)..':'..sample
   end
+  control('sample_gain', 'sample level', 0.25, 4, 'exp', 1.5, 'x',
+    function(v) engine.sample_gain(v) end)
+  control('slice_size', 'slice size', 0.06, 0.5, 'exp', 0.2, 's',
+    function(v) engine.slice_size(v) end)
+  control('slice_density', 'slice density', 1, 8, 'exp', 5, 'Hz',
+    function(v) engine.slice_density(v) end)
+  control('slice_speed', 'random speed max', 0.5, 2, 'lin', 1.5, 'x',
+    function(v) engine.slice_speed(v) end)
+  control('slice_reverse', 'reverse chance', 0, 1, 'lin', 0.35, '',
+    function(v) engine.slice_reverse(v) end)
+  control('slice_mix', 'tape / slice mix', 0, 1, 'lin', 0.5, '',
+    function(v) engine.slice_mix(v) end)
+  control('gain', 'output level', 0, 1, 'lin', 0.75, '',
+    function(v) engine.gain(v) end)
+
+  params:set_action(pid('capture_length'), function(v)
+    if resize_clock then clock.cancel(resize_clock) end
+    resize_clock = clock.run(function()
+      clock.sleep(0.4)
+      resize_clock = nil
+      if state ~= 3 then restart_loop(v) end
+    end)
+  end)
+
+  -- Initialize only Grainloom controls; never bang unrelated system params.
+  engine.feedback(pget('feedback'))
+  engine.rate(pget('rate'))
+  engine.mix(pget('mix'))
+  engine.sample_gain(pget('sample_gain'))
+  engine.slice_size(pget('slice_size'))
+  engine.slice_density(pget('slice_density'))
+  engine.slice_speed(pget('slice_speed'))
+  engine.slice_reverse(pget('slice_reverse'))
+  engine.slice_mix(pget('slice_mix'))
+  engine.gain(pget('gain'))
+
   state_poll = poll.set('grainloom_state')
   state_poll.time = 0.1
   state_poll.callback = function(v)
     local rev = math.floor(v/10)
-    local status = v%10
-    state = status == 9 and -1 or status
-    if state == 2 then pending = false end
-    if state == -1 then
-      pending = false; playing = false; bouncing = false; message = 'load failed'
-    end
-    if rev > revision and state == 1 then
-      pending = false
-      playing = true; message = 'sample ready'
-      if bouncing then generations = generations+1; bouncing = false end
+    state = v%10
+    if rev > revision then
+      pending = state == 3
+      if state == 4 then
+        writing = true
+        message = 'recording + replaying'
+      elseif state == 1 then
+        writing = false
+        message = 'freeze on'
+      elseif state == 0 then
+        message = 'loop stopped'
+      end
     end
     revision = rev
   end
+
   time_poll = poll.set('grainloom_seconds')
   time_poll.time = 0.1
   time_poll.callback = function(v) seconds = v end
-  state_poll:start(); time_poll:start()
-  refresh = metro.init(function() if not selecting then redraw() end end, 1/15)
+  state_poll:start()
+  time_poll:start()
+
+  engine.liveLoop(1, pget('capture_length'))
+  refresh = metro.init(function() redraw() end, 1/15)
   refresh:start()
 end
 
-function enc(n,d)
-  if n == 1 then page = util.clamp(page+d,1,#pages)
-  elseif n == 2 or n == 3 then params:delta(pages[page][n],d) end
+function enc(n, d)
+  if n == 1 then
+    page = util.clamp(page+d, 1, #pages)
+  elseif n == 2 or n == 3 then
+    params:delta(pid(pages[page][n]), d)
+  end
   redraw()
 end
 
-function key(n,z)
-  if n == 1 then shift = z == 1; return end
-  if z == 0 then return end
-  if shift then
-    if n == 2 then load_sample()
-    elseif n == 3 and state == 1 and not pending then
-      playing = not playing; engine.playing(playing and 1 or 0)
-    end
-  elseif n == 2 then
-    if pending or state == 3 then return end
-    if state == 2 then
-      engine.stopCapture(); pending = true
-    else
-      engine.freeze(0); frozen = false
-      pending = true; playing = false
-      message = 'preparing recording...'
-      generations = 0
-      engine.capture(params:get('capture_length'),0)
-    end
+function key(n, z)
+  if z == 0 or pending then return end
+  if n == 2 then
+    writing = not writing
+    engine.writing(writing and 1 or 0)
+    message = writing and 'freeze off' or 'freeze on'
   elseif n == 3 then
-    frozen = not frozen; engine.freeze(frozen and 1 or 0)
+    playing = not playing
+    engine.playing(playing and 1 or 0)
+    message = playing and 'sample on' or 'sample off'
   end
-  if not selecting then redraw() end
+  redraw()
 end
 
 function redraw()
-  screen.clear(); screen.aa(1); screen.font_size(8)
-  screen.level(15); screen.move(0,9); screen.text('grainloom')
-  local status = state == 2 and 'REC' or ((pending or state == 3) and 'WAIT'
-    or (playing and (frozen and 'HOLD' or 'PLAY') or 'STOP'))
-  screen.move(128,9); screen.text_right(status..string.format(' %.1fs',seconds))
-  screen.level(5); screen.move(0,22)
-  screen.text(page..'/'..#pages..' '..pages[page][1]..'  g'..generations)
+  screen.clear()
+  screen.aa(1)
+  screen.font_size(8)
+  screen.level(15)
+  screen.move(0, 9)
+  screen.text('grainloom')
+  screen.move(128, 9)
+  local status = pending and 'WAIT' or (writing and 'LOOP' or 'FREEZE')
+  if not playing then status = 'OFF' end
+  screen.text_right(status..string.format(' %.1fs', seconds))
+
+  screen.level(5)
+  screen.move(0, 22)
+  screen.text(page..'/'..#pages..' '..pages[page][1])
   for i=2,3 do
     local id = pages[page][i]
-    screen.level(12); screen.move(0,20+i*10)
-    screen.text(params:lookup_param(id).name)
-    screen.move(128,20+i*10); screen.text_right(params:string(id))
+    screen.level(12)
+    screen.move(0, 20+i*10)
+    screen.text(params:lookup_param(pid(id)).name)
+    screen.move(128, 20+i*10)
+    screen.text_right(params:string(pid(id)))
   end
-  screen.level(5); screen.move(0,63)
-  screen.text(shift and 'K2 load   K3 play/pause'
-    or (state == 0 and message or 'K2 rec/stop   K3 hold'))
-  if state == -1 then
-    screen.clear(); screen.level(15); screen.move(0,25)
-    screen.text(message); screen.move(0,45); screen.text('K1+K2 load another file')
-  end
+
+  screen.level(5)
+  screen.move(0, 63)
+  screen.text('K2 freeze     K3 on/off')
   screen.update()
 end
 
 function cleanup()
+  if resize_clock then clock.cancel(resize_clock); resize_clock = nil end
   if refresh then refresh:stop() end
   if state_poll then state_poll:stop() end
   if time_poll then time_poll:stop() end
-  engine.stopCapture()
-  engine.playing(0)
+  engine.liveLoop(0, pget('capture_length'))
 end

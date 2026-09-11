@@ -1,0 +1,8 @@
+// Minimal desktop test double, copied to a temporary .sc file only during tests.
+CroneEngine {
+    var <context, <commands, <polls;
+    *new { |ctx| ^super.new.init(ctx) }
+    init { |ctx| context=ctx; commands=Dictionary.new; polls=Dictionary.new; ^this }
+    addCommand { |name, format, fn| commands[name.asSymbol]=fn }
+    addPoll { |name, fn| polls[name.asSymbol]=fn }
+}

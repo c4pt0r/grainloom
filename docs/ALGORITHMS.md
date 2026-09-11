@@ -23,10 +23,12 @@ The replay signal is multiplied by sample level, mixed with stereo hardware inpu
 using an equal-power crossfade, DC-filtered, limited to 0.95, and sent to output.
 
 The optional slice layer uses two asynchronous `GrainBuf` streams. Each trigger
-chooses a random Buffer position, duration variation, stereo pan, speed, and
-forward/reverse direction. Hann windows prevent hard slice boundaries. Tape and
-slice replay are equal-power mixed before sample level. This layer is output-only:
-it is not routed back into `RecordBuf`. No other effects are connected.
+chooses a random Buffer position, duration variation, stereo pan, quantized speed,
+and forward/reverse direction. Speeds are selected from the tape-ratio set `0.5`,
+`2/3`, `0.75`, `1`, `4/3`, `1.5`, and `2`, capped by the speed-max control. Hann
+windows prevent hard slice boundaries. Tape and slice replay are equal-power
+mixed before sample level. This layer is output-only: it is not routed back into
+`RecordBuf`. No other effects are connected.
 
 K2 is **freeze**: it sets the recorder's `run` control. At zero, the write head
 stops and Buffer contents remain unchanged while replay continues. K3 is

@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Quantize random slice playback to musical tape-speed ratios while retaining the
+  existing maximum-speed and independent reverse controls.
 - Add a bounded dual-stream slice replay layer: random Buffer positions, varied
   speed, probabilistic reverse, stereo pan, Hann windows, and no feedback routing.
 - Fix clipped sample playback by reducing capture makeup to 2×, changing the

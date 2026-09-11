@@ -60,7 +60,7 @@ function init()
     function(v) engine.slice_size(v) end)
   control('slice_density', 'slice density', 1, 8, 'exp', 5, 'Hz',
     function(v) engine.slice_density(v) end)
-  control('slice_speed', 'random speed max', 0.5, 2, 'lin', 1.5, 'x',
+  control('slice_speed', 'quantized speed max', 0.5, 2, 'lin', 1.5, 'x',
     function(v) engine.slice_speed(v) end)
   control('slice_reverse', 'reverse chance', 0, 1, 'lin', 0.35, '',
     function(v) engine.slice_reverse(v) end)

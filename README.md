@@ -15,7 +15,7 @@ Turn E1 to select a page. E2 and E3 edit its controls.
 | LOOP | recording time (0.1–30 s) | feedback (0–0.98) |
 | TAPE | tape speed/direction (-2×–2×) | input:sample mix |
 | SLICE | slice size (0.06–0.5 s) | slice density (1–8 Hz) |
-| SLICE PLAY | random speed ceiling (0.5×–2×) | reverse probability |
+| SLICE PLAY | quantized speed ceiling (0.5×–2×) | reverse probability |
 | LEVEL | tape:slice mix | sample level (0.25×–4×) |
 
 - K2 **freeze**: freezes/resumes the record head. Playback continues while frozen.
@@ -42,10 +42,11 @@ Feedback is capped below unity; new input uses `1-feedback`, making every write 
 bounded crossfade rather than an accumulating gain stage.
 
 The optional slice layer runs two asynchronous, windowed readers at random Buffer
-positions. Every slice receives a random speed between 0.5× and `random speed
-max`; `reverse chance` independently reverses slices. Density is capped at 8 Hz
-per stream and each reader is capped at eight concurrent grains. Slices mix only
-into replay and never feed the record Buffer.
+positions. Every slice chooses a musical tape-speed ratio from `0.5×`, `2/3×`,
+`0.75×`, `1×`, `4/3×`, `1.5×`, and `2×`, limited by `quantized speed max`;
+`reverse chance` independently reverses slices. Density is capped at 8 Hz per
+stream and each reader is capped at eight concurrent grains. Slices mix only into
+replay and never feed the record Buffer.
 
 There is intentionally no generation-loss, dropout, wow/flutter, bit-crush,
 glitch, reverb, scan, file-loading, or resampling-generation path.

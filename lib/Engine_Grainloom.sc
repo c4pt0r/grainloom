@@ -41,9 +41,13 @@ Engine_Grainloom : CroneEngine {
             var trigA = Impulse.kr(density);
             var trigB = Impulse.kr(density*0.79,0.5);
             var maxSpeed = slice_speed.clip(0.5,2);
-            var speedA = TRand.kr(0.5,maxSpeed,trigA)
+            var speedRatios = [0.5,2/3,0.75,1,4/3,1.5,2];
+            var maxSpeedIndex = (maxSpeed >= speedRatios).sum-1;
+            var speedA = Select.kr(
+                TIRand.kr(0,maxSpeedIndex,trigA),speedRatios)
                 * Select.kr(TRand.kr(0,1,trigA)<slice_reverse,[1,-1]);
-            var speedB = TRand.kr(0.5,maxSpeed,trigB)
+            var speedB = Select.kr(
+                TIRand.kr(0,maxSpeedIndex,trigB),speedRatios)
                 * Select.kr(TRand.kr(0,1,trigB)<slice_reverse,[1,-1]);
             var sliceA = GrainBuf.ar(2,trigA,
                 slice_size.clip(0.06,0.5)*TRand.kr(0.75,1.25,trigA),

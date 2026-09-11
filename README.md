@@ -11,6 +11,8 @@ play them at quantized tape-speed ratios, including probabilistic reverse.
 There is no capture step: launch Grainloom, play into the input, and the loop
 starts evolving immediately.
 
+[中文入门](docs/QUICKSTART.zh-CN.md)
+
 ## Quick start
 
 1. Set the norns system monitor level to zero.
@@ -37,6 +39,7 @@ Turn E1 to select a page. E2 and E3 edit its controls.
 Defaults: 2.5 seconds, 0.72 feedback, normal tape speed, 2:8 input:sample
 balance, 50% tape:slice mix, 0.2-second slices at 5 Hz, 1.5× quantized
 speed ceiling, 35% reverse probability, 1.5× sample level, and 0.75 output.
+Output level is available from PARAMETERS rather than an encoder page.
 
 Changing recording time clears the current loop and allocates a new Buffer after
 a 0.4-second encoder debounce. MIX is shown as `input:sample`: `10:0` is input
@@ -85,6 +88,13 @@ git clone https://github.com/c4pt0r/grainloom.git
 The custom engine is `lib/Engine_Grainloom.sc`. After the first installation,
 restart the norns audio services once so SuperCollider discovers the engine, then
 select Grainloom. Ordinary Lua-only updates require only an app reload.
+
+## Documentation
+
+- [中文入门](docs/QUICKSTART.zh-CN.md)
+- [Current algorithm](docs/ALGORITHMS.md)
+- [Validation](docs/VALIDATION.md)
+- [Changelog](CHANGELOG.md)
 
 ## License
 

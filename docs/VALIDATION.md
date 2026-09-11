@@ -1,32 +1,62 @@
 # Validation
 
-## Automated checks
+The checks below match the current minimal loop-and-slice engine. Tests for the
+removed v0.1.0 effects and manual sampling workflow are intentionally absent.
 
-`tests/test_controls.py` executes the actual Lua script in a mocked norns host.
-It verifies defaults, namespaced parameters, K2 freeze, K3 sample on/off,
-recording-time debounce, encoder dispatch, polling, and cleanup.
+## Automated controls test
+
+`tests/test_controls.py` executes `grainloom.lua` in a mocked norns host. It
+checks:
+
+- all current defaults and namespaced parameter IDs;
+- the 2:8 input/sample formatter;
+- K2 freeze and K3 sample on/off;
+- the recording-length debounce and Buffer restart command;
+- encoder dispatch across all five pages;
+- poll, metro, clock, and cleanup behavior.
+
+It requires Python and `lupa`:
 
 ```sh
 python3 tests/test_controls.py
 ```
 
-`tests/test_dsp.py` compiles the actual engine with a small CroneEngine test
-double and renders the recorder/replay path offline. It requires local `sclang`
-and `scsynth` paths.
+## Offline DSP test
+
+`tests/test_dsp.py` compiles the actual SuperCollider engine against a minimal
+`CroneEngine` test double. It renders the record/replay path non-realtime and
+checks output channel count, sample rate, non-silence, bounded peak, reverse tape
+playback, and clean server exit.
 
 ```sh
 python3 tests/test_dsp.py /path/to/sclang /path/to/scsynth
 ```
 
-## Hardware checks
+## norns hardware test
 
-1. Confirm Grainloom loads without SuperCollider or Lua errors.
-2. With system monitor off, verify input remains audible at MIX 10:0.
-3. At MIX 0:10, verify the previous 2.5-second pass is audible.
-4. Confirm feedback 0 replaces each pass and feedback 0.72 creates decaying repeats.
-5. Freeze writes with K2 and verify the captured loop remains unchanged.
-6. Turn sample replay off with K3 and verify the input side of MIX remains audible.
-7. Change recording time repeatedly and confirm only one final Buffer rebuild.
-8. Run for at least 15 minutes and inspect JACK for xruns.
+After installing or changing `lib/Engine_Grainloom.sc`:
 
-The release remains experimental until the long-running hardware check passes.
+1. Load Grainloom and confirm there are no SuperCollider or Lua errors.
+2. Confirm the server contains one `grainloom_loop_voice` and one
+   `grainloom_loop_record` node.
+3. With system monitor at zero, check `10:0`, `5:5`, and `0:10` input/sample
+   balances.
+4. Let at least one full loop pass and confirm sample replay contains the earlier
+   input rather than only the live source.
+5. Confirm feedback 0 replaces each pass and feedback 0.72 creates decaying
+   repeats without growing louder each pass.
+6. Press K2 and confirm the Buffer stops changing while tape and slices continue.
+7. Press K3 and confirm tape/slice replay turns off; when input is included in the
+   mix, the input branch remains audible.
+8. Sweep tape speed through positive, zero, and negative values.
+9. Increase slice mix, then verify random positions, quantized pitch steps, and
+   probabilistic reverse are audible.
+10. Change recording time several times quickly and confirm only the final value
+    rebuilds and clears the Buffer.
+11. Run for at least 15 minutes and check that the voice and recorder remain
+    present, CPU remains stable, and JACK reports no steady-state xruns.
+
+The current engine has been compiled and loaded successfully on the target norns,
+with its expected two nodes and all four audio/app services active. Short
+steady-state observations showed no new xruns or engine errors. The longer test
+remains the recommended check before performance use.

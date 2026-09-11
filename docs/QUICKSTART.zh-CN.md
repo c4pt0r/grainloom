@@ -1,48 +1,83 @@
 # grainloom 中文入门
 
-颗粒采样、循环、磁带损耗、glitch 与混响的混合乐器。
-面向原版 norns / norns shield，不需要 grid。
+grainloom 是一个面向 monome norns / norns shield 的极简持续循环与随机切片乐器，
+不需要 grid，也不需要手动触发录音。
 
-**v0.1.0 为实验版：桌面代码与离线音频测试已通过，尚未在 norns 实机验证。**
+启动后，它会立即循环录制并播放最近的一段输入。默认循环长度为 2.5 秒；每一圈
+保留 72% 的旧内容，同时写入新输入，形成逐渐衰减、持续变化的 tape-delay 效果。
+两条独立的 slice 播放流会从同一个实时 Buffer 中随机选择小片，以量化速度正放
+或反放。
 
 ## 安装
 
 在 norns 的 shell 中执行：
 
 ```sh
-git clone https://github.com/c4pt0r/grainloom.git /home/we/dust/code/grainloom
+cd /home/we/dust/code
+git clone https://github.com/c4pt0r/grainloom.git
 ```
 
-也可以下载 Release 中的 ZIP，将 `grainloom` 文件夹通过 SFTP 放进
-`/home/we/dust/code/`。重启 norns 编译引擎，再从 SELECT 选择
-`grainloom/grainloom`。不要安装多份同名引擎。
+首次安装后需要重启一次 norns 音频服务，让 SuperCollider 发现自定义引擎，然后
+从 SELECT 选择 `grainloom/grainloom`。普通 Lua 更新只需重新加载 app，不需要重启
+norns。
 
-## 操作
+## 开箱即用
 
-- **E1**：换页；**E2 / E3**：调整页面上的两个参数。
-- **K2**：开始新录音；再按一次提前结束；默认最多录制 8 秒，可调到 30 秒。
-- **K3**：冻结／恢复颗粒扫描。普通循环层继续运行。
-- **短按住 K1 + K2**：选择采样文件。
-- **短按住 K1 + K3**：播放／暂停。暂停保留混响尾音，播放头继续前进。
-- **PARAMETERS → print next generation**：将处理后的声音重录为下一代采样。
+1. 将 norns 系统的 monitor level 设为 0，避免额外的干声监听路径。
+2. 打开 grainloom，然后直接输入声音；录音与 sample 播放会自动开始。
+3. 等待至少一圈，再调整 feedback 或 input/sample mix。
+4. 调高 tape/slice mix，可以听到更多随机切片。
+5. K2 冻结当前 Buffer；K3 开关 sample 播放。
 
-K1 长按由 norns 系统菜单使用。加载采样也可以从 PARAMETERS 进入。
+## 控制
 
-## 磁带损耗
+E1 换页，E2 / E3 调整当前页的两个参数。
 
-TAPE LOSS 页控制损耗和 dropout，INSTABILITY 页控制 wow/flutter。
-PATINA 页的数字降质单独控制，避免将磁带质感等同于 bitcrusher。
+| 页面 | E2 | E3 |
+| --- | --- | --- |
+| LOOP | 录音长度（0.1–30 秒） | feedback（0–0.98） |
+| TAPE | tape 速度与方向（-2×–2×） | input/sample 比例 |
+| SLICE | slice 长度（0.06–0.5 秒） | slice 密度（1–8 Hz） |
+| SLICE PLAY | 量化速度上限（0.5×–2×） | 反放概率 |
+| LEVEL | tape/slice 比例 | sample level（0.25×–4×） |
 
-每次 print 都会将当前颗粒、glitch、磁带损耗与混响印入采样，反复执行即可
-累积损耗。屏幕 `g` 显示完成的重录代数。新采样仍会经过当前效果链。
+- **K2 — freeze**：冻结或恢复录音写头。冻结时已有循环继续播放。
+- **K3 — on/off**：打开或关闭 tape 与 slice 的 sample 播放。只要 mix 中仍包含
+  input，干声就继续存在。
 
-重录会替换内存里的采样，第一版没有撤销。磁盘原始文件不会被修改。
-PARAMETERS 预设只保存参数，不保存录音；保存演奏请用 norns 的 TAPE 录音功能。
+input/sample mix 显示为 `输入:sample`：`10:0` 只有输入，`5:5` 为等比例，
+`0:10` 只有 sample。修改录音长度会清空当前循环并建立新的 Buffer。
 
-## 第一版边界
+## 默认值
 
-采样内部为单声道，颗粒声像和混响输出为立体声。输入录音混合左右声道，
-加载立体声文件取第一个声道。内部重录也会折叠成单声道。
+- 循环：2.5 秒
+- feedback：0.72
+- tape 速度：1×
+- input/sample：2:8
+- slice 长度：0.2 秒
+- slice 密度：5 Hz
+- slice 速度上限：1.5×
+- reverse 概率：35%
+- tape/slice：50%
+- sample level：1.5×
+- output level：0.75（可从 PARAMETERS 调整）
 
-这是原创、公开算法的磁带与颗粒乐器，不是 Generation Loss、MOOD 或 Morphagene
-私有算法的精确复刻。详细算法与验证范围见英文 README 和 docs。
+## Slice 速度
+
+随机 slice 不使用任意连续速度，而是从以下 tape-speed 倍率中选择：
+
+`0.5× · 2/3× · 0.75× · 1× · 4/3× · 1.5× · 2×`
+
+`quantized speed max` 决定当前可选择的最高倍率；`reverse chance` 独立决定每个
+slice 是否反放。slice 只进入输出混音，不会写回 feedback Buffer，因此不会因
+切片重叠造成递归增益。
+
+## 当前边界
+
+- 循环 Buffer 为单声道；slice 输出带随机立体声声像。
+- 不加载文件，也不保存 Buffer。保存演奏请使用 norns 的 TAPE 录音功能。
+- 没有 generation loss、dropout、wow/flutter、bit-crush、glitch、内部混响或
+  generation printing。
+- grainloom 不会修改 norns 的全局 reverb。
+
+详细实现和检查方法见 `docs/ALGORITHMS.md` 与 `docs/VALIDATION.md`。

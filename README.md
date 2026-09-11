@@ -1,10 +1,23 @@
 # grainloom
 
-A minimal continuous feedback loop machine for monome norns.
+A minimal continuous feedback loop and slice machine for monome norns.
 
 Grainloom continuously records a mono input into a circular Buffer while playing
 that Buffer. On every pass, new input is mixed with a decayed copy of the old
 contents. The default 2.5-second loop therefore behaves like a compact tape delay.
+Two additional readers pick small random slices from the same live Buffer and
+play them at quantized tape-speed ratios, including probabilistic reverse.
+
+There is no capture step: launch Grainloom, play into the input, and the loop
+starts evolving immediately.
+
+## Quick start
+
+1. Set the norns system monitor level to zero.
+2. Launch Grainloom and send it audio. Recording and replay start automatically.
+3. Let at least one loop pass, then adjust `feedback` and `input / sample mix`.
+4. Raise `tape / slice mix` to hear more random slices.
+5. Use K2 to freeze the current Buffer; use K3 to turn sample replay on or off.
 
 ## Controls
 
@@ -21,8 +34,9 @@ Turn E1 to select a page. E2 and E3 edit its controls.
 - K2 **freeze**: freezes/resumes the record head. Playback continues while frozen.
 - K3 **on/off**: turns sample replay on or off. The input side of MIX remains audible.
 
-Defaults: 2.5 seconds, 0.72 feedback, normal speed, 2:8 input:sample
-balance, 1.5× sample level, and 0.75 output.
+Defaults: 2.5 seconds, 0.72 feedback, normal tape speed, 2:8 input:sample
+balance, 50% tape:slice mix, 0.2-second slices at 5 Hz, 1.5× quantized
+speed ceiling, 35% reverse probability, 1.5× sample level, and 0.75 output.
 
 Changing recording time clears the current loop and allocates a new Buffer after
 a 0.4-second encoder debounce. MIX is shown as `input:sample`: `10:0` is input
@@ -31,8 +45,10 @@ only, `5:5` is equal balance, and `0:10` is sample only.
 ## Signal path
 
 ```text
-hardware input ─┬─> feedback RecordBuf ─> circular Buffer ─> PlayBuf ─┐
-                └──────────────────────────────────────────────────────┤ MIX ─> limiter ─> output
+input ─> feedback RecordBuf ─> Buffer ─┬─> looping PlayBuf ───────┐
+                                      └─> two GrainBuf readers ─┴─> tape/slice mix ─> sample level ─> wet
+input ───────────────────────────────────────────────────────────────────────────────────────────────> dry
+dry + wet ─> input/sample mix ─> limiter ─> output
 ```
 
 The record path selects the louder hardware input channel rather than summing
@@ -48,8 +64,13 @@ positions. Every slice chooses a musical tape-speed ratio from `0.5×`, `2/3×`,
 stream and each reader is capped at eight concurrent grains. Slices mix only into
 replay and never feed the record Buffer.
 
+Slices are output-only: they never feed the record Buffer, so increasing slice
+mix cannot create an uncontrolled feedback stack. The final limiter protects the
+output from overlapping slice peaks.
+
 There is intentionally no generation-loss, dropout, wow/flutter, bit-crush,
-glitch, reverb, scan, file-loading, or resampling-generation path.
+glitch, reverb, file loading, or resampling-generation path. Grainloom does not
+change the global norns reverb.
 
 For MIX to represent the complete dry/wet balance, set the norns system monitor
 level to zero because system monitoring is a separate dry path.
@@ -61,8 +82,9 @@ cd /home/we/dust/code
 git clone https://github.com/c4pt0r/grainloom.git
 ```
 
-The custom engine is `lib/Engine_Grainloom.sc`. Restart the norns audio/app
-services after changing the engine, then select Grainloom.
+The custom engine is `lib/Engine_Grainloom.sc`. After the first installation,
+restart the norns audio services once so SuperCollider discovers the engine, then
+select Grainloom. Ordinary Lua-only updates require only an app reload.
 
 ## License
 

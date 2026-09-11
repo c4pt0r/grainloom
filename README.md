@@ -49,7 +49,7 @@ only, `5:5` is equal balance, and `0:10` is sample only.
 
 ```text
 input ─> feedback RecordBuf ─> Buffer ─┬─> looping PlayBuf ───────┐
-                                      └─> two GrainBuf readers ─┴─> tape/slice mix ─> sample level ─> wet
+                                       └─> two GrainBuf readers ──┴─> tape/slice mix ─> sample level ─> wet
 input ───────────────────────────────────────────────────────────────────────────────────────────────> dry
 dry + wet ─> input/sample mix ─> limiter ─> output
 ```

@@ -11,6 +11,8 @@ play them at quantized tape-speed ratios, including probabilistic reverse.
 There is no capture step: launch Grainloom, play into the input, and the loop
 starts evolving immediately.
 
+![the LOOP page](docs/img/loop.png)
+
 [中文入门](docs/QUICKSTART.zh-CN.md)
 
 ## Quick start
@@ -47,7 +49,10 @@ Turn E1 to select a page. E2 and E3 edit its controls.
 - K3 **on/off**: turns sample replay on or off. The input side of MIX remains audible.
 
 Because K2 now carries two gestures, its freeze toggle acts on the release
-rather than the press.
+rather than the press. The header and the bottom line follow the state: while
+dubbing they read `DUB` and `K2 end dub`.
+
+![dubbing](docs/img/dub.png)
 
 Defaults: 2.5 seconds, 0.72 feedback, the full Buffer as the tape window,
 normal tape speed, 2:8 input:sample balance, 50% tape:slice mix, 0.2-second
@@ -119,6 +124,8 @@ record head keeps circling the entire Buffer underneath, so a narrow window is
 continually refilled with material from outside it. A window that runs past the
 end of the Buffer wraps.
 
+![the WINDOW page](docs/img/window.png)
+
 The optional slice layer runs two asynchronous, windowed readers whose positions
 are anchored to the moving record head. `slice age` sets how far into the past
 they reach and `slice spread` how wide a span they draw from, so "one second
@@ -142,6 +149,8 @@ previous pass and adding the Buffer's own output on top of that is above unity
 by construction. The amount is also capped below one internally.
 
 Turning E1 wraps from the last page back to the first.
+
+![the SLICE POS page](docs/img/slice-pos.png)
 
 `bloom` makes the machine answer silence. An envelope follower on the input
 falls away over `bloom time`; as it does, slices grow longer, thin out, and take

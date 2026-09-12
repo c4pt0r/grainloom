@@ -1,7 +1,6 @@
 -- grainloom
--- continuous feedback
--- loop + slice machine
---
+-- v1.0.0 @dongxu
+-- feedback loop + slices
 -- play in; it starts now
 -- E1 page  E2/E3 edit
 -- K2 freeze  K3 on/off

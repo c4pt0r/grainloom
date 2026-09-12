@@ -1,9 +1,10 @@
 # Changelog
 
-## Unreleased — current main
+## v1.0.0 — 2026-09-12
 
 The original experimental instrument has been rebuilt as a minimal,
-always-running feedback loop and slice machine.
+always-running feedback loop and slice machine. This is the first release
+intended for performance rather than experiment.
 
 ### Current behavior
 

@@ -10,25 +10,25 @@ grainloom 是一个面向 monome norns / norns shield 的极简持续循环与�
 
 ## 安装
 
-在 norns 的 shell 中执行：
+在 maiden 中执行：
 
-```sh
-cd /home/we/dust/code
-git clone https://github.com/c4pt0r/grainloom.git
+```text
+;install https://github.com/c4pt0r/grainloom
 ```
 
-首次安装后需要重启一次 norns 音频服务，让 SuperCollider 发现自定义引擎，然后
-从 SELECT 选择 `grainloom/grainloom`。普通 Lua 更新只需重新加载 app，不需要重启
-norns。
+安装完成后重启一次 norns，让 SuperCollider 发现自定义引擎，然后从 SELECT 选择
+`grainloom/grainloom`。普通 Lua 更新只需重新加载 app，不需要重启 norns。
 
 ## 开箱即用
 
-1. 将 norns 系统的 monitor level 设为 0，避免额外的干声监听路径。
-2. 打开 grainloom，然后直接输入声音；录音与 sample 播放会自动开始。
-3. 等待至少一圈，再调整 feedback 或 input/sample mix。
-4. 调高 tape/slice mix，可以听到更多随机切片。
-5. K2 冻结当前 Buffer；K3 开关 sample 播放。
-6. 冻结状态下长按 K2 进入 dub，往循环上叠新的一层；再按一下 K2 结束。
+1. 在 maiden 中执行 `;install https://github.com/c4pt0r/grainloom`，完成安装后
+   重启一次 norns。
+2. 将 norns 系统的 monitor level 设为 0，避免额外的干声监听路径。
+3. 打开 grainloom，然后直接输入声音；录音与 sample 播放会自动开始。
+4. 等待至少一圈，再调整 feedback 或 input/sample mix。
+5. 调高 tape/slice mix，可以听到更多随机切片。
+6. K2 冻结当前 Buffer；K3 开关 sample 播放。
+7. 冻结状态下长按 K2 进入 dub，往循环上叠新的一层；再按一下 K2 结束。
 
 ## 控制
 

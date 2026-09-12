@@ -17,12 +17,15 @@ starts evolving immediately.
 
 ## Quick start
 
-1. Set the norns system monitor level to zero.
-2. Launch Grainloom and send it audio. Recording and replay start automatically.
-3. Let at least one loop pass, then adjust `feedback` and `input / sample mix`.
-4. Raise `tape / slice mix` to hear more random slices.
-5. Use K2 to freeze the current Buffer; use K3 to turn sample replay on or off.
-6. While frozen, hold K2 to dub new layers onto the loop; press K2 again to stop.
+1. In maiden, run
+   `;install https://github.com/c4pt0r/grainloom`.
+2. Restart norns once so SuperCollider discovers the custom engine.
+3. Set the norns system monitor level to zero.
+4. Launch Grainloom and send it audio. Recording and replay start automatically.
+5. Let at least one loop pass, then adjust `feedback` and `input / sample mix`.
+6. Raise `tape / slice mix` to hear more random slices.
+7. Use K2 to freeze the current Buffer; use K3 to turn sample replay on or off.
+8. While frozen, hold K2 to dub new layers onto the loop; press K2 again to stop.
 
 ## Controls
 
@@ -194,14 +197,15 @@ played.
 
 ## Install
 
-```sh
-cd /home/we/dust/code
-git clone https://github.com/c4pt0r/grainloom.git
+Run this command in maiden:
+
+```text
+;install https://github.com/c4pt0r/grainloom
 ```
 
-The custom engine is `lib/Engine_Grainloom.sc`. After the first installation,
-restart the norns audio services once so SuperCollider discovers the engine, then
-select Grainloom. Ordinary Lua-only updates require only an app reload.
+After installation, restart norns once so SuperCollider discovers the custom
+engine, then select `grainloom/grainloom` from SELECT. Ordinary Lua-only updates
+require only an app reload.
 
 ## Documentation
 

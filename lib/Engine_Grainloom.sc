@@ -4,7 +4,7 @@ Engine_Grainloom : CroneEngine {
     var voice, recorder, sample, regenBus, task;
     var state = 0, seconds = 2.5, revision = 0, alive = true;
     var feedback = 0.72, dubLevel = 1;
-    var loopFrames = 0, maxFrames = 0, primedFrames = 0;
+    var loopFrames = 0, maxFrames = 0, validFrames = 0;
 
     alloc {
         var server = context.server;
@@ -19,7 +19,8 @@ Engine_Grainloom : CroneEngine {
         // that has to be reallocated and refilled to change size.
         maxFrames = (rate * 30).asInteger;
         loopFrames = (rate * 2.5).asInteger;
-        primedFrames = loopFrames;
+        // How far from frame 0 the Buffer is known to hold loop content.
+        validFrames = loopFrames * 2;
 
         SynthDef(\grainloom_loop_record, { |buf, inL, inR,
             feedback=0.72, run=1, dub=0, dub_level=1, regen_b=0,
@@ -238,42 +239,58 @@ Engine_Grainloom : CroneEngine {
         var limit = requested.clip(0.02,30);
         var frames = (context.server.sampleRate * limit).asInteger
             .clip(2, maxFrames);
-        loopFrames = frames;
         seconds = limit;
-        voice !? { voice.set(\loop_frames,frames) };
-        recorder !? { recorder.set(\loop_frames,frames) };
+        // Move the readers at once, but never past what is known to hold loop
+        // content: beyond that they would be reading whatever an earlier and
+        // longer loop left behind. The rest follows a few milliseconds later.
+        this.applyLength(frames.min(validFrames).max(2));
+        if(frames > validFrames) { this.extendTo(frames) };
     }
 
-    primeMirror {
-        // The mirror is only refreshed as the record head passes, so right
-        // after a length change the region one loop ahead still belongs to the
-        // previous length. Copying the loop into it makes forward reads correct
-        // immediately instead of after a full pass. Both the tiling and the
-        // mirror copy write outside the live loop, so this is safe while the
-        // recorder runs; at worst a copy catches a seam mid-pass.
+    applyLength { |frames|
+        loopFrames = frames;
+        // One bundle. If the two Synths disagree on the length for even a
+        // block, the recorder's mirror write lands at phase plus the shorter
+        // length, which is inside the reader's loop.
+        context.server.makeBundle(nil, {
+            voice !? { voice.set(\loop_frames,frames) };
+            recorder !? { recorder.set(\loop_frames,frames) };
+        });
+    }
+
+    extendTo { |frames|
         var server = context.server;
-        //
-        // The recorder keeps [0, L) and its mirror [L, 2L) written for whatever
-        // L was last settled, so that is how far content is known to be good.
-        // Anything the loop has grown past it is tiled by repeated doubling,
-        // which reaches any length in a handful of copies rather than one per
-        // loop's worth.
+        // Tile what is already there over the part of the Buffer the loop is
+        // about to reach, by repeated doubling, and only then hand the readers
+        // the longer loop. Copying first is the point: the previous order
+        // memcpyd the whole grown region underneath a live read head.
         task !? { task.stop };
         task = Routine {
-            var target = loopFrames;
-            var filled = (primedFrames*2).min(target).max(2);
-            var n;
-            while { alive and: { filled < target } } {
-                n = filled.min(target - filled);
+            var filled = validFrames.max(2), n;
+            while { alive and: { filled < frames } } {
+                n = filled.min(frames - filled);
                 sample.copyData(sample, filled, 0, n);
                 server.sync;
                 filled = filled + n;
             };
             if(alive) {
-                sample.copyData(sample, target, 0, target);
-                primedFrames = target;
+                validFrames = frames;
+                this.applyLength(frames);
             };
         }.play(SystemClock);
+    }
+
+    primeMirror {
+        // The mirror is only refreshed as the record head passes it, so right
+        // after a length change the region one loop ahead still belongs to the
+        // previous length, and a grain or a window overrunning the loop end
+        // hears it. One copy fixes that. The mirror is by definition outside
+        // the live loop, so unlike the growth tiling this is safe to run while
+        // the readers and the recorder are running.
+        if(alive and: { loopFrames > 1 }) {
+            sample.copyData(sample, loopFrames, 0, loopFrames);
+            validFrames = loopFrames * 2;
+        };
     }
 
     free {

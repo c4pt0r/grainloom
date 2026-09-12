@@ -77,6 +77,10 @@ change that arrives while an allocation is in flight is held and applied when
 that allocation completes, rather than dropped. Changing length therefore clears
 the current loop.
 
+Unloading the app stops the recorder and replay without consulting the
+paramset, because norns also calls `cleanup` when `init` failed before the
+parameters were added.
+
 The Lua side arms a five-second watchdog whenever it asks for a new Buffer. If
 the engine never reports a settled state, the watchdog releases the interface,
 shows `ERR` in the header, and re-enables K2 and K3 instead of leaving them dead

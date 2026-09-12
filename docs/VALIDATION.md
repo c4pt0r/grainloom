@@ -15,7 +15,8 @@ checks:
 - encoder dispatch across all five pages;
 - a recording-length change that arrives mid-allocation still reaching the
   engine, and the watchdog re-enabling the keys when no answer comes back;
-- poll, metro, clock, and cleanup behavior.
+- poll, metro, clock, and cleanup behavior, including `cleanup` running after
+  a failed `init` with an empty paramset.
 
 It requires Python and `lupa`:
 

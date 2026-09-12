@@ -19,7 +19,10 @@ params={
     values[id]=spec.default; definitions[id]={name=name,spec=spec}
   end,
   set_action=function(_,id,fn) actions[id]=fn end,
-  get=function(_,id) return values[id] end,
+  get=function(_,id)
+    if values[id]==nil then error('invalid paramset index: '..id, 2) end
+    return values[id]
+  end,
   set=function(_,id,v) values[id]=v; if actions[id] then actions[id](v) end end,
   delta=function(_,id,d)
     local s=definitions[id].spec
@@ -112,8 +115,11 @@ polls.grainloom_state.callback(33)
 polls.grainloom_state.callback(44)
 for i=1,5 do enc(1,1); enc(2,1); enc(3,-1); redraw() end
 
+-- cleanup() also runs after a failed init(), where no param was ever added.
+-- It must still stop the loop instead of raising on a missing paramset index.
+definitions, values = {}, {}
 cleanup()
 assert(last('liveLoop')[2]==0)
 assert(polls.grainloom_state.stopped and polls.grainloom_seconds.stopped)
 ''')
-print("PASS: minimal loop controls, freeze/on-off keys, resize debounce,\n      queued resize, allocation watchdog, cleanup")
+print("PASS: minimal loop controls, freeze/on-off keys, resize debounce,\n      queued resize, allocation watchdog, cleanup after failed init")

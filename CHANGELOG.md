@@ -33,6 +33,9 @@ always-running feedback loop and slice machine.
   levels cannot chatter and park the crossfade where both inputs sum.
 - Free a replaced Buffer after one second rather than 0.1, so a slice still
   reading it (up to 0.625 s) cannot outlive the Buffer.
+- Stop reading a parameter from `cleanup`, which norns also runs after a
+  failed `init`, where the paramset is empty. The lookup raised and the loop
+  was never told to stop; the engine ignores the length argument anyway.
 - Queue a recording-time change that arrives during an allocation instead of
   dropping it, and add a five-second watchdog so a wedged allocation can no
   longer leave the interface in `WAIT` with K2 and K3 dead.

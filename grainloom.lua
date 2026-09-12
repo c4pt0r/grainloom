@@ -203,5 +203,9 @@ function cleanup()
   if refresh then refresh:stop() end
   if state_poll then state_poll:stop() end
   if time_poll then time_poll:stop() end
-  engine.liveLoop(0, pget('capture_length'))
+  -- norns calls cleanup() even when init() failed part-way, so the paramset
+  -- may never have been populated: reading a param here would raise and the
+  -- stop command would never be sent. The engine ignores the length argument
+  -- when the first one is 0.
+  if engine.liveLoop then engine.liveLoop(0, 0) end
 end

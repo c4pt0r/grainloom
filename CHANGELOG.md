@@ -57,6 +57,13 @@ always-running feedback loop and slice machine.
   the recorder mirrors every sample one loop ahead so reads past the loop end
   wrap correctly.
 
+- Recall the last PSET when the script loads, before any value is pushed to
+  the engine. Reading a PSET already fires each control's action, so no bang is
+  needed and unrelated system params stay untouched.
+- Replace the one-line file header with a short summary and key reference, which
+  is what the SELECT screen shows; the SPDX line moved below it so it no longer
+  appears there.
+
 ### Fixes
 
 - Select the record input channel with hysteresis so near-equal left and right

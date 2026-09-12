@@ -9,6 +9,8 @@ removed v0.1.0 effects and manual sampling workflow are intentionally absent.
 checks:
 
 - all current defaults and namespaced parameter IDs;
+- the last PSET being read exactly once, and before any value reaches the
+  engine, so saved values are what it starts from;
 - the 2:8 input/sample formatter;
 - K2 freeze and K3 sample on/off, including the freeze toggle moving to the
   key release, the long press starting dub only from a frozen loop, and a press
@@ -92,7 +94,11 @@ After installing or changing `lib/Engine_Grainloom.sc`:
     silent, and that slices near the loop end do not drop out.
 19. Freeze, then sweep recording time, and confirm the Buffer contents are still
     not being written.
-20. Run for at least 15 minutes and check that the voice and recorder remain
+20. Save a PSET from PARAMETERS, change several controls, reload the script, and
+    confirm the saved values come back and the engine is audibly using them.
+21. Highlight Grainloom in SELECT and confirm the summary reads correctly, that
+    no line is clipped at the right edge, and that E2 scrolls to the end.
+22. Run for at least 15 minutes and check that the voice and recorder remain
     present, CPU remains stable, and JACK reports no steady-state xruns.
 
 The current engine has been compiled and loaded successfully on the target norns,

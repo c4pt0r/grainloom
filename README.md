@@ -58,6 +58,14 @@ a fresh instance sounds exactly as it did before them.
 Output level and dub level are available from PARAMETERS rather than an encoder
 page.
 
+PARAMETERS > PSET saves and recalls every control. The set used last is read
+back the next time Grainloom loads, before anything is sent to the engine, so
+saved values are what the engine starts from. With nothing saved yet, nothing
+changes. A PSET stores controls, not the audio in the Buffer.
+
+The SELECT screen shows a short summary of the instrument and its keys; E2
+scrolls it.
+
 Recording time is a wrap point rather than a Buffer size, so changing it takes
 effect on the next sample: nothing is reallocated, nothing is cleared, there is
 no gap, and it can be swept continuously while playing. Shortening reframes the

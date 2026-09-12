@@ -5,7 +5,7 @@ from lupa import LuaRuntime
 ROOT = Path(__file__).resolve().parents[1]
 lua = LuaRuntime(unpack_returned_tuples=True)
 lua.execute(r'''
-calls, polls, values, actions, definitions = {}, {}, {}, {}, {}
+calls, polls, values, actions, definitions, reads = {}, {}, {}, {}, {}, {}
 engine = setmetatable({}, {__index=function(_,name)
   return function(...) table.insert(calls,{name,...}) end
 end})
@@ -19,6 +19,8 @@ params={
     values[id]=spec.default; definitions[id]={name=name,spec=spec}
   end,
   set_action=function(_,id,fn) actions[id]=fn end,
+  read=function(_,f) reads[#reads+1]={f or 'last', #calls} end,
+  write=function(_,f) end,
   get=function(_,id)
     if values[id]==nil then error('invalid paramset index: '..id, 2) end
     return values[id]
@@ -89,6 +91,10 @@ assert(last('window_start')[2]==0 and last('window_size')[2]==1)
 assert(last('slice_age')[2]==0 and last('slice_spread')[2]==1)
 assert(last('bloom')[2]==0 and last('bloom_time')[2]==4)
 assert(last('regen')[2]==0 and last('regen_tone')[2]==4000)
+-- The last PSET is recalled once, before anything is pushed to the engine, so
+-- saved values are what reach it. Reading fires each action, so no bang.
+assert(#reads==1 and reads[1][1]=='last')
+assert(reads[1][2]==0)   -- and before a single value was pushed to the engine
 assert(definitions.grainloom_capture_length.spec.min==0.02)
 assert(definitions.grainloom_capture_length.formatter({get=function() return 0.02 end})=='20ms')
 assert(definitions.grainloom_capture_length.formatter({get=function() return 2.5 end})=='2.5s')

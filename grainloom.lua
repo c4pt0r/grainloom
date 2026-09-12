@@ -1,6 +1,34 @@
--- grainloom: a minimal continuous feedback loop machine
--- SPDX-License-Identifier: MIT
+-- grainloom
+-- continuous feedback
+-- loop + slice machine
+--
+-- play in; it starts now
+-- E1 page  E2/E3 edit
+-- K2 freeze  K3 on/off
+-- K2 hold, frozen: dub
+--
+-- pages, E2 and E3:
+-- LOOP   length, feedback
+-- WINDOW start, size
+-- TAPE   speed, in/sample
+-- REGEN  amount, tone
+-- SLICE  size, density
+-- SLICE POS  age, spread
+-- SLICE PLAY speed, rev
+-- LEVEL  mix, sample lvl
+-- BLOOM  amount, time
+--
+-- PARAMETERS > PSET
+-- saves and recalls all
+-- of the above; the last
+-- one used comes back on
+-- the next load
+--
+-- set the system monitor
+-- to 0, so MIX is the
+-- whole dry/wet balance
 engine.name = 'Grainloom'
+-- SPDX-License-Identifier: MIT
 
 local cs = require 'controlspec'
 
@@ -124,6 +152,12 @@ function init()
       engine.primeMirror()
     end)
   end)
+
+  -- Recall the last PSET before pushing anything to the engine, so a saved
+  -- set of values is what gets sent. Reading fires each param's action, so no
+  -- bang is needed -- and params:bang() would reach unrelated system params.
+  -- With no PSET saved this prints a note and changes nothing.
+  params:read()
 
   -- Initialize only Grainloom controls; never bang unrelated system params.
   engine.feedback(pget('feedback'))

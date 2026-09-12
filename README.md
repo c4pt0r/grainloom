@@ -159,6 +159,30 @@ change the global norns reverb.
 For MIX to represent the complete dry/wet balance, set the norns system monitor
 level to zero because system monitoring is a separate dry path.
 
+## Influences
+
+Grainloom comes out of two instruments, and knowing them is the fastest way in.
+
+From Make Noise's **Morphagene**: a window that slides over a reel rather than
+playing all of it. `window start` and `window size` are Gene Slide and Gene Size;
+`tape speed` is Vari-Speed, forwards and reverse; dub is Sound on Sound; and the
+two offset slice readers stagger the way Morph layers genes. What is absent is
+just as deliberate -- there are no reels, no splices, no file loading and no
+Organize. Morphagene is built around working a recorded reel; Grainloom has one
+live loop and no capture step at all.
+
+From Chase Bliss's **MOOD**: a micro-looper that is simply always recording, with
+no gesture to start it, and a loop you can crush down until it stops being a
+phrase. `recording time` is that Clock control taken further at both ends -- up
+to 30 seconds, and down to 20 milliseconds, where the loop is no longer a phrase
+but a waveform. Freeze is the same idea as holding MOOD's loop.
+
+Two things here belong to neither. `slice age` anchors the readers to the moving
+record head, so a distance into the past stays that distance as the head moves,
+instead of naming a fixed spot in the Buffer. And `bloom` makes the instrument
+answer silence, growing into the gaps and withdrawing the moment anything is
+played.
+
 ## Install
 
 ```sh

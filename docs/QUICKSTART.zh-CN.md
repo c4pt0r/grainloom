@@ -108,6 +108,26 @@ grainloom 时自动读回，并且**早于任何值被推送到引擎**，所以
 slice 是否反放。slice 只进入输出混音，不会写回 feedback Buffer，因此不会因
 切片重叠造成递归增益。
 
+## 灵感来源
+
+grainloom 来自两台乐器，熟悉它们是最快的入门路径。
+
+**Make Noise Morphagene**：在一条 reel 上滑动的窗口，而不是整条播放。
+`window start` 和 `window size` 就是 Gene Slide 与 Gene Size；`tape speed` 是
+Vari-Speed（含反向）；dub 是 Sound on Sound；两条错开的 slice 流则对应 Morph
+层叠 gene 的方式。**没有**的部分同样是刻意的 —— 没有 reel、没有 splice、没有
+文件加载、没有 Organize。Morphagene 的核心是摆弄一条录好的 reel；grainloom
+只有一条活的循环，根本没有采集步骤。
+
+**Chase Bliss MOOD**：一台永远在录的 micro-looper，没有启动手势，而且循环可以
+被压到不再是一个乐句。`recording time` 就是它的 Clock，只是两头都推得更远 ——
+上到 30 秒，下到 20 毫秒，那时循环已经不是乐句而是波形。freeze 等同于按住
+MOOD 的循环。
+
+有两样东西两者都没有。`slice age` 把取样位置锚定在移动的写头上，所以「多久
+之前」在写头移动时始终是那么久之前，而不是 buffer 里一个固定的点。`bloom`
+则让这台机器回应沉默 —— 你停手它就长出来，你一出声它就退回去。
+
 ## 当前边界
 
 - 循环 Buffer 为单声道；slice 输出带随机立体声声像。

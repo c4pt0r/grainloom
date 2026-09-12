@@ -10,7 +10,9 @@ checks:
 
 - all current defaults and namespaced parameter IDs;
 - the 2:8 input/sample formatter;
-- K2 freeze and K3 sample on/off;
+- K2 freeze and K3 sample on/off, including the freeze toggle moving to the
+  key release, the long press starting dub only from a frozen loop, and a press
+  during dub ending it without also toggling freeze;
 - the recording-length debounce and Buffer restart command;
 - encoder dispatch across all five pages;
 - a recording-length change that arrives mid-allocation still reaching the
@@ -51,12 +53,16 @@ After installing or changing `lib/Engine_Grainloom.sc`:
 6. Press K2 and confirm the Buffer stops changing while tape and slices continue.
 7. Press K3 and confirm tape/slice replay turns off; when input is included in the
    mix, the input branch remains audible.
-8. Sweep tape speed through positive, zero, and negative values.
-9. Increase slice mix, then verify random positions, quantized pitch steps, and
+8. Freeze with K2, then hold K2 for half a second and confirm the header reads
+   `DUB`, the existing loop keeps its level, and new input layers on top of it
+   rather than replacing it. Press K2 and confirm recording stops, the header
+   returns to `FREEZE`, and the dubbed layer stays in time with the loop.
+9. Sweep tape speed through positive, zero, and negative values.
+10. Increase slice mix, then verify random positions, quantized pitch steps, and
    probabilistic reverse are audible.
-10. Change recording time several times quickly and confirm only the final value
+11. Change recording time several times quickly and confirm only the final value
     rebuilds and clears the Buffer.
-11. Run for at least 15 minutes and check that the voice and recorder remain
+12. Run for at least 15 minutes and check that the voice and recorder remain
     present, CPU remains stable, and JACK reports no steady-state xruns.
 
 The current engine has been compiled and loaded successfully on the target norns,

@@ -77,18 +77,36 @@ assert(last('slice_density')[2]==5)
 assert(last('slice_speed')[2]==1.5)
 assert(last('slice_reverse')[2]==0.35)
 assert(last('slice_mix')[2]==0.5)
+assert(last('dub_level')[2]==1)
 assert(last('liveLoop')[2]==1 and last('liveLoop')[3]==2.5)
 assert(definitions.grainloom_mix.formatter({get=function() return 0 end})=='10:0')
 assert(definitions.grainloom_mix.formatter({get=function() return 1 end})=='0:10')
 
--- Keys are ignored while the initial Buffer is allocating.
-key(2,1); assert(count('writing')==0)
+-- Keys are ignored while the initial Buffer is allocating. K2 now carries two
+-- gestures, so its freeze toggle lands on the release rather than the press.
+key(2,1); key(2,0); assert(count('writing')==0)
 polls.grainloom_state.callback(14)
-key(2,1); assert(last('writing')[2]==0)
+key(2,1); key(2,0); assert(last('writing')[2]==0)
 polls.grainloom_state.callback(21)
-key(2,1); assert(last('writing')[2]==1)
+key(2,1); key(2,0); assert(last('writing')[2]==1)
 key(3,1); assert(last('playing')[2]==0)
 key(3,1); assert(last('playing')[2]==1)
+
+-- Holding K2 while frozen starts dub, and that release must not also toggle.
+polls.grainloom_state.callback(31)
+local w = count('writing')
+key(2,1); run_clocks(); assert(last('dubbing')[2]==1)
+key(2,0); assert(count('writing')==w)
+
+-- Any press during dub ends it; that release must not toggle freeze either.
+polls.grainloom_state.callback(42)
+key(2,1); assert(last('dubbing')[2]==0)
+key(2,0); assert(count('writing')==w)
+
+-- Holding K2 while the record head runs cannot dub: it falls back to freeze.
+polls.grainloom_state.callback(54)
+key(2,1); run_clocks(); assert(count('dubbing')==2)
+key(2,0); assert(count('writing')==w+1)
 
 -- Recording-time edits debounce and restart once at the final length.
 params:set('grainloom_capture_length',4)
@@ -98,7 +116,7 @@ assert(count('liveLoop')==2)
 assert(last('liveLoop')[2]==1 and last('liveLoop')[3]==6)
 
 -- A resize landing mid-allocation is queued by the engine, not dropped here.
-polls.grainloom_state.callback(33)
+polls.grainloom_state.callback(63)
 params:set('grainloom_capture_length',9)
 run_clocks()
 assert(count('liveLoop')==3)
@@ -106,13 +124,13 @@ assert(last('liveLoop')[2]==1 and last('liveLoop')[3]==9)
 
 -- The watchdog releases the UI when the engine never answers the request.
 local held = count('writing')
-key(2,1); assert(count('writing')==held)
+key(2,1); key(2,0); assert(count('writing')==held)
 run_clocks()
-key(2,1); assert(count('writing')==held+1)
+key(2,1); key(2,0); assert(count('writing')==held+1)
 
 -- All five pages dispatch valid engine controls.
-polls.grainloom_state.callback(33)
-polls.grainloom_state.callback(44)
+polls.grainloom_state.callback(73)
+polls.grainloom_state.callback(84)
 for i=1,5 do enc(1,1); enc(2,1); enc(3,-1); redraw() end
 
 -- cleanup() also runs after a failed init(), where no param was ever added.
@@ -122,4 +140,4 @@ cleanup()
 assert(last('liveLoop')[2]==0)
 assert(polls.grainloom_state.stopped and polls.grainloom_seconds.stopped)
 ''')
-print("PASS: minimal loop controls, freeze/on-off keys, resize debounce,\n      queued resize, allocation watchdog, cleanup after failed init")
+print("PASS: minimal loop controls, freeze/on-off keys, resize debounce,\n      queued resize, allocation watchdog,\n      K2 long-press dub, cleanup after failed init")

@@ -32,6 +32,31 @@ Buffer location is read before that location is overwritten. A looping `PlayBuf`
 provides the main tape voice and accepts continuous forward, reverse, and zero
 rates from -2× to 2×.
 
+## Dub
+
+Holding K2 for half a second while the loop is frozen starts dub. The record
+head runs again, but the write weights change:
+
+```text
+buffer[n] = input[n] * dub_level + old_buffer[n] * 1
+```
+
+Unlike the normal pass this is additive rather than a crossfade, which is what
+layering means: the loop under the head keeps its level and new input is added
+to it. Repeated layers therefore accumulate, exactly as they do on any
+overdubbing looper, and the output limiter is what holds the result in range.
+`dub level` defaults to 1 and lives in PARAMETERS.
+
+The two weights are interpolated over 20 ms rather than switched, because
+`RecordBuf` reads `recLevel` and `preLevel` once per control block and a hard
+step would click. Dub reuses the running recorder rather than replacing it, so
+the write head keeps the position freeze left it at and the new layer stays
+aligned with the loop; a fresh `RecordBuf` would restart at frame 0.
+
+Any press of K2 ends dub, which stops the head where it stands and returns to
+the frozen state. The plain freeze toggle also clears dub, so the two gestures
+cannot leave the recorder in a mixed mode.
+
 ## Random slices
 
 Two asynchronous `GrainBuf` streams read the same live Buffer. Their trigger
@@ -65,8 +90,10 @@ The wet replay and stereo hardware input are combined by an equal-power
 input/sample crossfade. The result is DC-filtered, limited to 0.95, multiplied by
 output level, and sent to the engine output.
 
-- K2 (`freeze`) sets the recorder's `run` control to zero or one. Frozen Buffer
-  contents keep replaying.
+- K2 (`freeze`) sets the recorder's `run` control to zero or one on the key
+  release. Frozen Buffer contents keep replaying. Holding the key instead starts
+  dub, described above; because the key carries two gestures, a press that a
+  hold or a dub exit has already consumed does not also toggle freeze.
 - K3 (`on/off`) gates tape and slice replay. It does not gate the input branch.
 
 Changing recording time waits for a 0.4-second encoder debounce, allocates a new

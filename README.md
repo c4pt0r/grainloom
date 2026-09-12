@@ -20,6 +20,7 @@ starts evolving immediately.
 3. Let at least one loop pass, then adjust `feedback` and `input / sample mix`.
 4. Raise `tape / slice mix` to hear more random slices.
 5. Use K2 to freeze the current Buffer; use K3 to turn sample replay on or off.
+6. While frozen, hold K2 to dub new layers onto the loop; press K2 again to stop.
 
 ## Controls
 
@@ -33,13 +34,22 @@ Turn E1 to select a page. E2 and E3 edit its controls.
 | SLICE PLAY | quantized speed ceiling (0.5×–2×) | reverse probability |
 | LEVEL | tape:slice mix | sample level (0.25×–4×) |
 
-- K2 **freeze**: freezes/resumes the record head. Playback continues while frozen.
+- K2 **freeze**: a short press freezes/resumes the record head. Playback
+  continues while frozen.
+- K2 **hold** (0.5 s, while frozen): starts dub. The record head runs again, but
+  the existing loop is preserved and new input is layered on top of it instead
+  of crossfading with it. Any press of K2 ends dub and freezes again. Holding
+  K2 while the head is already running does nothing but the usual freeze.
 - K3 **on/off**: turns sample replay on or off. The input side of MIX remains audible.
+
+Because K2 now carries two gestures, its freeze toggle acts on the release
+rather than the press.
 
 Defaults: 2.5 seconds, 0.72 feedback, normal tape speed, 2:8 input:sample
 balance, 50% tape:slice mix, 0.2-second slices at 5 Hz, 1.5× quantized
 speed ceiling, 35% reverse probability, 1.5× sample level, and 0.75 output.
-Output level is available from PARAMETERS rather than an encoder page.
+Output level and dub level are available from PARAMETERS rather than an encoder
+page.
 
 Changing recording time clears the current loop and allocates a new Buffer after
 a 0.4-second encoder debounce. A change that arrives while an allocation is
@@ -65,6 +75,12 @@ keep apart. Input
 is DC-filtered, given 2× protected capture makeup, and limited before recording.
 Feedback is capped below unity; new input uses `1-feedback`, making every write a
 bounded crossfade rather than an accumulating gain stage.
+
+Dub is the one place where a write is not a bounded crossfade. The previous
+pass is kept at full level and new input is added on top at `dub level`, so
+repeated layers accumulate the way they do on any overdubbing looper; the final
+limiter is what keeps the output in range. Ending dub freezes the head where it
+stands, so the layer stays aligned with the loop.
 
 The optional slice layer runs two asynchronous, windowed readers at random Buffer
 positions. Every slice chooses a musical tape-speed ratio from `0.5×`, `2/3×`,

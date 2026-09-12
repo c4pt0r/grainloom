@@ -17,15 +17,18 @@ local pages = {
 }
 
 local page = 1
-local state = 0 -- 0 empty, 1 write frozen, 3 allocating, 4 recording
+local state = 0 -- 0 empty, 1 write frozen, 2 dubbing, 3 allocating, 4 recording
 local seconds = 0
 local revision = 0
 local pending = true
 local writing = true
 local playing = true
+local dubbing = false
 local message = 'starting loop...'
 local timed_out = false
-local state_poll, time_poll, refresh, resize_clock, watchdog_clock
+local k2_handled = false
+local k2_hold_time = 0.5
+local state_poll, time_poll, refresh, resize_clock, watchdog_clock, k2_hold
 
 local function control(id, name, min, max, warp, default, units, action)
   params:add_control(pid(id), name,
@@ -86,6 +89,8 @@ function init()
     function(v) engine.slice_mix(v) end)
   control('gain', 'output level', 0, 1, 'lin', 0.75, '',
     function(v) engine.gain(v) end)
+  control('dub_level', 'dub level', 0, 1, 'lin', 1, '',
+    function(v) engine.dub_level(v) end)
 
   params:set_action(pid('capture_length'), function(v)
     if resize_clock then clock.cancel(resize_clock) end
@@ -109,6 +114,7 @@ function init()
   engine.slice_reverse(pget('slice_reverse'))
   engine.slice_mix(pget('slice_mix'))
   engine.gain(pget('gain'))
+  engine.dub_level(pget('dub_level'))
 
   state_poll = poll.set('grainloom_state')
   state_poll.time = 0.1
@@ -120,11 +126,18 @@ function init()
       timed_out = false
       if state == 4 then
         writing = true
+        dubbing = false
         message = 'recording + replaying'
+      elseif state == 2 then
+        writing = true
+        dubbing = true
+        message = 'dub rec'
       elseif state == 1 then
         writing = false
+        dubbing = false
         message = 'freeze on'
       elseif state == 0 then
+        dubbing = false
         message = 'loop stopped'
       end
     end
@@ -152,13 +165,51 @@ function enc(n, d)
   redraw()
 end
 
-function key(n, z)
-  if z == 0 or pending then return end
-  if n == 2 then
+-- K2 carries two gestures, so the freeze toggle moved to the release: a short
+-- press toggles freeze, holding it while frozen starts dub, and any press
+-- during dub ends it. `k2_handled` marks a press already spent by one of the
+-- latter two so the release does not also toggle.
+local function k2_press()
+  if pending then
+    k2_handled = true
+  elseif dubbing then
+    dubbing = false
+    engine.dubbing(0)
+    message = 'dub off'
+    k2_handled = true
+  else
+    k2_handled = false
+    if k2_hold then clock.cancel(k2_hold) end
+    k2_hold = clock.run(function()
+      clock.sleep(k2_hold_time)
+      k2_hold = nil
+      -- Only a frozen loop can be dubbed. With the head running there is no
+      -- settled pass to layer onto, so the hold falls through to the toggle.
+      if not pending and not writing and not dubbing then
+        dubbing = true
+        k2_handled = true
+        engine.dubbing(1)
+        message = 'dub rec'
+        redraw()
+      end
+    end)
+  end
+end
+
+local function k2_release()
+  if k2_hold then clock.cancel(k2_hold); k2_hold = nil end
+  if not k2_handled then
     writing = not writing
     engine.writing(writing and 1 or 0)
     message = writing and 'freeze off' or 'freeze on'
-  elseif n == 3 then
+  end
+  k2_handled = false
+end
+
+function key(n, z)
+  if n == 2 then
+    if z == 1 then k2_press() else k2_release() end
+  elseif n == 3 and z == 1 and not pending then
     playing = not playing
     engine.playing(playing and 1 or 0)
     message = playing and 'sample on' or 'sample off'
@@ -176,6 +227,7 @@ function redraw()
   screen.move(128, 9)
   local status = pending and 'WAIT' or (writing and 'LOOP' or 'FREEZE')
   if not playing then status = 'OFF' end
+  if dubbing then status = 'DUB' end
   if timed_out then status = 'ERR' end
   screen.text_right(status..string.format(' %.1fs', seconds))
 
@@ -193,13 +245,20 @@ function redraw()
 
   screen.level(5)
   screen.move(0, 63)
-  screen.text('K2 freeze     K3 on/off')
+  local hint = 'K2 freeze     K3 on/off'
+  if dubbing then
+    hint = 'K2 end dub    K3 on/off'
+  elseif not writing and not pending then
+    hint = 'K2 hold: dub  K3 on/off'
+  end
+  screen.text(hint)
   screen.update()
 end
 
 function cleanup()
   if resize_clock then clock.cancel(resize_clock); resize_clock = nil end
   if watchdog_clock then clock.cancel(watchdog_clock); watchdog_clock = nil end
+  if k2_hold then clock.cancel(k2_hold); k2_hold = nil end
   if refresh then refresh:stop() end
   if state_poll then state_poll:stop() end
   if time_poll then time_poll:stop() end

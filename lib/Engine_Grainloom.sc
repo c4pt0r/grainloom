@@ -3,14 +3,14 @@
 Engine_Grainloom : CroneEngine {
     var voice, recorder, sample, incoming, task, retired, queued;
     var state = 0, seconds = 0, revision = 0, alive = true;
-    var feedback = 0.72;
+    var feedback = 0.72, dubLevel = 1;
 
     alloc {
         var server = context.server;
         retired = List.new;
 
         SynthDef(\grainloom_loop_record, { |buf, inL, inR,
-            feedback=0.72, run=1|
+            feedback=0.72, run=1, dub=0, dub_level=1|
             var left = In.ar(inL);
             var right = In.ar(inR);
             var ampL = Amplitude.kr(left,0.01,0.05);
@@ -24,10 +24,17 @@ Engine_Grainloom : CroneEngine {
                 Schmidt.kr(ampR / (ampL + 1e-5), 0.8, 1.25), 0.02);
             var input = SelectX.ar(side, [left,right]);
             var fb = feedback.clip(0,0.98);
+            // Dub keeps the existing pass intact (preLevel 1) and adds new
+            // input on top, so layers stack instead of crossfading. Both
+            // levels are read per control block, so interpolate between the
+            // two modes rather than stepping, which would click.
+            var d = Lag.kr(dub.clip(0,1), 0.02);
+            var recAmt = ((1-fb) * (1-d)) + (dub_level.clip(0,1) * d);
+            var preAmt = (fb * (1-d)) + d;
             input = Limiter.ar(LeakDC.ar(input) * 2, 0.9, 0.01);
             RecordBuf.ar(input, buf,
-                recLevel: 1-fb,
-                preLevel: fb,
+                recLevel: recAmt,
+                preLevel: preAmt,
                 run: run,
                 loop: 1,
                 trigger: 1,
@@ -93,12 +100,25 @@ Engine_Grainloom : CroneEngine {
             feedback = msg[1].clip(0,0.98);
             recorder !? { recorder.set(\feedback,feedback) };
         });
+        this.addCommand(\dub_level,"f",{|msg|
+            dubLevel = msg[1].clip(0,1);
+            recorder !? { recorder.set(\dub_level,dubLevel) };
+        });
+        this.addCommand(\dubbing,"i",{|msg|
+            recorder !? {
+                var on = msg[1].clip(0,1);
+                // Dub runs the record head; ending it re-freezes in place.
+                recorder.set(\dub,on,\run,on);
+                state = if(on == 0,1,2);
+                revision = revision+1;
+            };
+        });
         this.addCommand(\playing,"i",{|msg|
             voice.set(\active,msg[1].clip(0,1));
         });
         this.addCommand(\writing,"i",{|msg|
             recorder !? {
-                recorder.set(\run,msg[1].clip(0,1));
+                recorder.set(\run,msg[1].clip(0,1),\dub,0);
                 state = if(msg[1] == 0,1,4);
                 revision = revision+1;
             };
@@ -143,7 +163,8 @@ Engine_Grainloom : CroneEngine {
                         [\buf,sample,
                          \inL,context.in_b[0].index,
                          \inR,context.in_b[1].index,
-                         \feedback,feedback]);
+                         \feedback,feedback,
+                         \dub_level,dubLevel]);
                     seconds = limit;
                     state = 4;
                     revision = revision+1;

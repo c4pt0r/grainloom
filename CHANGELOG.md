@@ -27,6 +27,13 @@ always-running feedback loop and slice machine.
 - Namespace every app parameter so Grainloom does not collide with or modify
   global norns controls such as reverb.
 
+### Added
+
+- Dub: holding K2 for half a second while frozen runs the record head again
+  with the existing pass preserved and new input layered on top, and any press
+  of K2 ends it and refreezes in place. Adds a `dub level` parameter, available
+  from PARAMETERS.
+
 ### Fixes
 
 - Select the record input channel with hysteresis so near-equal left and right

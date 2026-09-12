@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Minimal continuous feedback loop engine for norns.
 Engine_Grainloom : CroneEngine {
-    var voice, recorder, sample, incoming, task, retired;
+    var voice, recorder, sample, incoming, task, retired, queued;
     var state = 0, seconds = 0, revision = 0, alive = true;
     var feedback = 0.72;
 
@@ -13,9 +13,15 @@ Engine_Grainloom : CroneEngine {
             feedback=0.72, run=1|
             var left = In.ar(inL);
             var right = In.ar(inR);
+            var ampL = Amplitude.kr(left,0.01,0.05);
+            var ampR = Amplitude.kr(right,0.01,0.05);
+            // Commit to right only when it is clearly louder, and back to left
+            // only when it clearly is not. A bare comparison chatters whenever
+            // the two channels sit near each other, which parks the crossfade
+            // mid-way and sums them -- precisely the opposite-polarity
+            // cancellation this channel selection exists to avoid.
             var side = Lag.kr(
-                Amplitude.kr(right,0.01,0.05)
-                > Amplitude.kr(left,0.01,0.05), 0.05);
+                Schmidt.kr(ampR / (ampL + 1e-5), 0.8, 1.25), 0.02);
             var input = SelectX.ar(side, [left,right]);
             var fb = feedback.clip(0,0.98);
             input = Limiter.ar(LeakDC.ar(input) * 2, 0.9, 0.01);
@@ -100,6 +106,7 @@ Engine_Grainloom : CroneEngine {
         this.addCommand(\liveLoop,"if",{|msg|
             if(msg[1] == 0) {
                 this.stopLoop;
+                queued = nil;
                 state = 0;
                 revision = revision+1;
                 voice.set(\active,0);
@@ -112,7 +119,12 @@ Engine_Grainloom : CroneEngine {
     startLoop { |requestedLength|
         var server = context.server;
         var limit = requestedLength.clip(0.1,30);
-        if(state != 3) {
+        if(state == 3) {
+            // An allocation is already in flight. Remember the newest request
+            // instead of dropping it, so a fast encoder sweep can never leave
+            // the Buffer at a different length than the parameter reports.
+            queued = limit;
+        } {
             this.stopLoop;
             state = 3;
             revision = revision+1;
@@ -136,7 +148,13 @@ Engine_Grainloom : CroneEngine {
                     state = 4;
                     revision = revision+1;
                     retired.add(old);
-                    0.1.wait;
+                    queued !? { |again|
+                        queued = nil;
+                        this.startLoop(again);
+                    };
+                    // The grace period must outlast the longest slice that can
+                    // still be reading `old`: slice_size 0.5 * 1.25 jitter.
+                    1.0.wait;
                     if(alive and: { retired.includes(old) }) {
                         old.free;
                         retired.remove(old);
@@ -155,6 +173,7 @@ Engine_Grainloom : CroneEngine {
 
     free {
         alive = false;
+        queued = nil;
         task !? { task.stop };
         recorder !? { recorder.free };
         voice !? { voice.free };

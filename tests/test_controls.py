@@ -45,8 +45,11 @@ clock={
   sleep=function() end
 }
 function run_clocks()
-  local jobs=clock_jobs; clock_jobs={}
-  for _,fn in pairs(jobs) do fn() end
+  local jobs, ids = clock_jobs, {}
+  clock_jobs={}
+  for i in pairs(jobs) do ids[#ids+1]=i end
+  table.sort(ids)
+  for _,i in ipairs(ids) do jobs[i]() end
 end
 screen=setmetatable({}, {__index=function() return function() end end})
 function count(name)
@@ -91,6 +94,19 @@ run_clocks()
 assert(count('liveLoop')==2)
 assert(last('liveLoop')[2]==1 and last('liveLoop')[3]==6)
 
+-- A resize landing mid-allocation is queued by the engine, not dropped here.
+polls.grainloom_state.callback(33)
+params:set('grainloom_capture_length',9)
+run_clocks()
+assert(count('liveLoop')==3)
+assert(last('liveLoop')[2]==1 and last('liveLoop')[3]==9)
+
+-- The watchdog releases the UI when the engine never answers the request.
+local held = count('writing')
+key(2,1); assert(count('writing')==held)
+run_clocks()
+key(2,1); assert(count('writing')==held+1)
+
 -- All five pages dispatch valid engine controls.
 polls.grainloom_state.callback(33)
 polls.grainloom_state.callback(44)
@@ -100,4 +116,4 @@ cleanup()
 assert(last('liveLoop')[2]==0)
 assert(polls.grainloom_state.stopped and polls.grainloom_seconds.stopped)
 ''')
-print("PASS: minimal loop controls, freeze/on-off keys, resize debounce, cleanup")
+print("PASS: minimal loop controls, freeze/on-off keys, resize debounce,\n      queued resize, allocation watchdog, cleanup")

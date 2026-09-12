@@ -24,7 +24,8 @@ local pending = true
 local writing = true
 local playing = true
 local message = 'starting loop...'
-local state_poll, time_poll, refresh, resize_clock
+local timed_out = false
+local state_poll, time_poll, refresh, resize_clock, watchdog_clock
 
 local function control(id, name, min, max, warp, default, units, action)
   params:add_control(pid(id), name,
@@ -32,11 +33,28 @@ local function control(id, name, min, max, warp, default, units, action)
   if action then params:set_action(pid(id), action) end
 end
 
+-- Allocation can wedge on a busy server. Without a bound on `pending` the UI
+-- would sit in WAIT forever and K2/K3 would stay dead until the app reloads.
+local function arm_watchdog()
+  if watchdog_clock then clock.cancel(watchdog_clock) end
+  watchdog_clock = clock.run(function()
+    clock.sleep(5)
+    watchdog_clock = nil
+    if pending then
+      pending = false
+      timed_out = true
+      message = 'loop alloc timeout'
+    end
+  end)
+end
+
 local function restart_loop(length)
   pending = true
+  timed_out = false
   writing = true
   playing = true
   message = 'resizing loop...'
+  arm_watchdog()
   engine.liveLoop(1, length)
 end
 
@@ -74,7 +92,9 @@ function init()
     resize_clock = clock.run(function()
       clock.sleep(0.4)
       resize_clock = nil
-      if state ~= 3 then restart_loop(v) end
+      -- No state guard here: a request that lands mid-allocation is queued by
+      -- the engine and applied afterwards rather than silently dropped.
+      restart_loop(v)
     end)
   end)
 
@@ -97,6 +117,7 @@ function init()
     state = v%10
     if rev > revision then
       pending = state == 3
+      timed_out = false
       if state == 4 then
         writing = true
         message = 'recording + replaying'
@@ -116,6 +137,7 @@ function init()
   state_poll:start()
   time_poll:start()
 
+  arm_watchdog()
   engine.liveLoop(1, pget('capture_length'))
   refresh = metro.init(function() redraw() end, 1/15)
   refresh:start()
@@ -154,6 +176,7 @@ function redraw()
   screen.move(128, 9)
   local status = pending and 'WAIT' or (writing and 'LOOP' or 'FREEZE')
   if not playing then status = 'OFF' end
+  if timed_out then status = 'ERR' end
   screen.text_right(status..string.format(' %.1fs', seconds))
 
   screen.level(5)
@@ -176,6 +199,7 @@ end
 
 function cleanup()
   if resize_clock then clock.cancel(resize_clock); resize_clock = nil end
+  if watchdog_clock then clock.cancel(watchdog_clock); watchdog_clock = nil end
   if refresh then refresh:stop() end
   if state_poll then state_poll:stop() end
   if time_poll then time_poll:stop() end

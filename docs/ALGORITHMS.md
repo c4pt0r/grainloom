@@ -20,6 +20,10 @@ adding an unbounded gain stage on every pass. Feedback is capped at 0.98.
 
 The recorder chooses the louder hardware input channel, avoiding cancellation
 when left and right carry opposite-polarity versions of the same mono source.
+The choice is made with hysteresis: it commits to the right channel only once
+that channel reaches 1.25x the left, and returns only below 0.8x. A bare
+comparison would chatter whenever the two sit near each other and park the
+selector mid-crossfade, where both inputs sum.
 The selected input is DC-filtered, given 2× capture makeup, and limited to 0.9
 before it reaches the Buffer.
 
@@ -67,7 +71,16 @@ output level, and sent to the engine output.
 
 Changing recording time waits for a 0.4-second encoder debounce, allocates a new
 Buffer, points recorder and replay to it, and frees the previous Buffer after a
-short grace period. Changing length therefore clears the current loop.
+one-second grace period. That period outlasts the longest slice that can still
+be reading the old Buffer, which is `slice size 0.5 s x 1.25 jitter`. A length
+change that arrives while an allocation is in flight is held and applied when
+that allocation completes, rather than dropped. Changing length therefore clears
+the current loop.
+
+The Lua side arms a five-second watchdog whenever it asks for a new Buffer. If
+the engine never reports a settled state, the watchdog releases the interface,
+shows `ERR` in the header, and re-enables K2 and K3 instead of leaving them dead
+until the app is reloaded.
 
 Grainloom does not create or change global norns reverb controls. Generation
 loss, dropout, wow/flutter, bit crushing, glitch, file loading, manual capture,

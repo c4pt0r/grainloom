@@ -42,7 +42,10 @@ speed ceiling, 35% reverse probability, 1.5× sample level, and 0.75 output.
 Output level is available from PARAMETERS rather than an encoder page.
 
 Changing recording time clears the current loop and allocates a new Buffer after
-a 0.4-second encoder debounce. MIX is shown as `input:sample`: `10:0` is input
+a 0.4-second encoder debounce. A change that arrives while an allocation is
+already running is queued and applied afterwards, so the Buffer always ends at
+the length the parameter shows. If the engine does not answer within five
+seconds, the header reads `ERR` and the keys become usable again. MIX is shown as `input:sample`: `10:0` is input
 only, `5:5` is equal balance, and `0:10` is sample only.
 
 ## Signal path
@@ -55,7 +58,10 @@ dry + wet ─> input/sample mix ─> limiter ─> output
 ```
 
 The record path selects the louder hardware input channel rather than summing
-left and right, avoiding mono cancellation from opposite-polarity sources. Input
+left and right, avoiding mono cancellation from opposite-polarity sources. The
+choice uses hysteresis, so two channels at similar levels cannot chatter and
+leave the selector parked mid-crossfade, summing the very inputs it is there to
+keep apart. Input
 is DC-filtered, given 2× protected capture makeup, and limited before recording.
 Feedback is capped below unity; new input uses `1-feedback`, making every write a
 bounded crossfade rather than an accumulating gain stage.

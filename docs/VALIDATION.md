@@ -13,6 +13,8 @@ checks:
 - K2 freeze and K3 sample on/off;
 - the recording-length debounce and Buffer restart command;
 - encoder dispatch across all five pages;
+- a recording-length change that arrives mid-allocation still reaching the
+  engine, and the watchdog re-enabling the keys when no answer comes back;
 - poll, metro, clock, and cleanup behavior.
 
 It requires Python and `lupa`:

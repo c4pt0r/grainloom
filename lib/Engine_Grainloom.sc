@@ -1,16 +1,29 @@
 // SPDX-License-Identifier: MIT
 // Minimal continuous feedback loop engine for norns.
 Engine_Grainloom : CroneEngine {
-    var voice, recorder, sample, incoming, task, retired, queued, regenBus;
-    var state = 0, seconds = 0, revision = 0, alive = true;
+    var voice, recorder, sample, regenBus, task;
+    var state = 0, seconds = 2.5, revision = 0, alive = true;
     var feedback = 0.72, dubLevel = 1;
+    var loopFrames = 0, maxFrames = 0, primedFrames = 0;
 
     alloc {
         var server = context.server;
-        retired = List.new;
+        var rate = server.sampleRate;
+
+        // The Buffer is twice the longest loop, and the recorder writes every
+        // sample twice: once at the head and once one loop ahead of it. Any
+        // read that starts inside the loop and runs forward by up to one loop
+        // length therefore lands on correctly wrapped audio without the reader
+        // needing to know where the loop ends. That is what lets the loop
+        // length be a plain number both heads wrap on, instead of a Buffer
+        // that has to be reallocated and refilled to change size.
+        maxFrames = (rate * 30).asInteger;
+        loopFrames = (rate * 2.5).asInteger;
+        primedFrames = loopFrames;
 
         SynthDef(\grainloom_loop_record, { |buf, inL, inR,
-            feedback=0.72, run=1, dub=0, dub_level=1, regen_b=0|
+            feedback=0.72, run=1, dub=0, dub_level=1, regen_b=0,
+            loop_frames=120000, t_reset=0|
             var left = In.ar(inL);
             var right = In.ar(inR);
             var ampL = Amplitude.kr(left,0.01,0.05);
@@ -25,12 +38,20 @@ Engine_Grainloom : CroneEngine {
             var input = SelectX.ar(side, [left,right]);
             var fb = feedback.clip(0,0.98);
             // Dub keeps the existing pass intact (preLevel 1) and adds new
-            // input on top, so layers stack instead of crossfading. Both
-            // levels are read per control block, so interpolate between the
-            // two modes rather than stepping, which would click.
+            // input on top, so layers stack instead of crossfading.
             var d = Lag.kr(dub.clip(0,1), 0.02);
             var recAmt = ((1-fb) * (1-d)) + (dub_level.clip(0,1) * d);
             var preAmt = (fb * (1-d)) + d;
+            var len = loop_frames.clip(2, BufFrames.kr(buf)/2);
+            // Freeze has to stop the write, not just the head: with the phase
+            // held, a running BufWr would overwrite one frame forever. At run 0
+            // the write puts back exactly what it read, a true no-op.
+            var go = run.clip(0,1);
+            // Rate is exactly 0 or 1 and never lagged, so the phase stays on
+            // whole frames and the read below needs no interpolation.
+            var phase = Phasor.ar(t_reset, go, 0, len, 0);
+            var prev = BufRd.ar(1, buf, phase, 0, 1);
+            var written;
             // The 2x makeup belongs to the quiet hardware input only. Applying
             // it to the fold-back too would make the loop gain 2*regen*(1-fb)
             // and send anything above regen 0.5 divergent.
@@ -40,13 +61,9 @@ Engine_Grainloom : CroneEngine {
             // gain above unity by construction.
             input = LeakDC.ar(input) * 2;
             input = Limiter.ar(input + (In.ar(regen_b) * (1-d)), 0.9, 0.01);
-            RecordBuf.ar(input, buf,
-                recLevel: recAmt,
-                preLevel: preAmt,
-                run: run,
-                loop: 1,
-                trigger: 1,
-                doneAction: 0);
+            written = (input * recAmt * go) + (prev * ((preAmt * go) + (1-go)));
+            BufWr.ar(written, buf, phase, 0);
+            BufWr.ar(written, buf, phase + len, 0);
         }).add;
 
         SynthDef(\grainloom_loop_voice, { |out, inL, inR, buf,
@@ -55,9 +72,11 @@ Engine_Grainloom : CroneEngine {
             slice_density=5, slice_speed=1.5, slice_reverse=0.35,
             slice_mix=0.5, window_start=0, window_size=1,
             slice_age=0, slice_spread=1, bloom=0, bloom_time=4,
-            write_run=1, regen=0, regen_tone=4000, regen_b=0|
+            write_run=1, regen=0, regen_tone=4000, regen_b=0,
+            loop_frames=120000|
             var dry = [In.ar(inL),In.ar(inR)];
-            var frames = BufFrames.kr(buf).max(1);
+            var bufLen = BufFrames.kr(buf).max(2);
+            var len = loop_frames.clip(2, bufLen/2);
             var scale = BufRateScale.kr(buf);
             // Bloom grows into the gaps: `quiet` rises as the input falls away
             // over bloom_time and sits at zero while anything is being played.
@@ -65,19 +84,20 @@ Engine_Grainloom : CroneEngine {
                 0.05, Lag.kr(bloom_time,0.1));
             var bl = Lag.kr(bloom,0.05).clip(0,1)
                 * (1 - (inAmp*6).clip(0,1));
-            // Tape reads a window of the Buffer rather than always all of it,
-            // so Phasor+BufRd replaces PlayBuf, which only loops the whole
-            // Buffer. A window running past the end wraps: BufRd loops indices.
-            var wStart = Lag.kr(window_start,0.05).clip(0,1) * frames;
-            var wLen = (Lag.kr(window_size,0.05).clip(0.001,1) * frames).max(2);
+            // Tape reads a window of the loop rather than always all of it.
+            // A window running past the loop end reads the mirror the recorder
+            // keeps one loop ahead, so it wraps correctly with no special case.
+            var wStart = Lag.kr(window_start,0.05).clip(0,1) * len;
+            var wLen = (Lag.kr(window_size,0.05).clip(0.001,1) * len).max(2);
             var phase = Phasor.ar(t_reset, Lag.kr(rate,0.04) * scale,
                 wStart, wStart+wLen, wStart);
-            var loop = BufRd.ar(1, buf, phase, 1, 4);
-            // The record head's position, rebuilt: it advances one frame per
-            // sample whenever the recorder runs, and freeze stops both. Not
-            // lagged, so repeated freezing cannot drift it out of alignment.
-            var wPhase = A2K.kr(Phasor.ar(t_reset, write_run * scale,
-                0, frames, 0)) / frames;
+            var loop = BufRd.ar(1, buf, phase, 0, 4);
+            // The record head's position, rebuilt from the same loop length,
+            // the same run gate and the same reset the recorder uses, so the
+            // two stay locked. Deliberately unlagged: a ramped rate would put
+            // it on fractional frames and drift on every freeze.
+            var wPhase = A2K.kr(Phasor.ar(t_reset, write_run, 0, len, 0)) / len;
+            var loopNorm = len / bufLen;
             var density = (slice_density.clip(1,8) * (1 - (0.5*bl))).max(0.25);
             var trigA = Impulse.kr(density);
             var trigB = Impulse.kr(density*0.79,0.5);
@@ -91,14 +111,18 @@ Engine_Grainloom : CroneEngine {
                 TIRand.kr(0,maxSpeedIndex,trigB),speedRatios)
                 * Select.kr(TRand.kr(0,1,trigB)<slice_reverse,[1,-1]);
             // Slice positions are anchored to the moving record head, so `age`
-            // means a fixed distance into the past rather than a fixed spot in
-            // the Buffer. age 0 with spread 1 is a uniform draw over the whole
-            // Buffer, which is what the readers did before.
+            // means a fixed distance into the past rather than a fixed spot.
+            // age 0 with spread 1 is a uniform draw over the loop.
             var age = Lag.kr(slice_age,0.05).clip(0,1);
             var spread = Lag.kr(slice_spread,0.05).clip(0,1);
-            var size = slice_size.clip(0.06,0.5) * (1 + bl);
-            var posA = (wPhase - age - (TRand.kr(0,1,trigA)*spread)).wrap(0,1);
-            var posB = (wPhase - age - (TRand.kr(0,1,trigB)*spread)).wrap(0,1);
+            // A grain may read at up to 2x, and the mirror only guarantees one
+            // loop length past the start, so no grain may read further.
+            var maxSize = len / (2 * SampleRate.ir);
+            var size = (slice_size.clip(0.06,0.5) * (1 + bl)).min(maxSize);
+            var posA = (wPhase - age
+                - (TRand.kr(0,1,trigA)*spread)).wrap(0,1) * loopNorm;
+            var posB = (wPhase - age
+                - (TRand.kr(0,1,trigB)*spread)).wrap(0,1) * loopNorm;
             var sliceA = GrainBuf.ar(2,trigA,
                 size*TRand.kr(0.75,1.25,trigA),
                 buf,speedA,posA,2,
@@ -129,15 +153,27 @@ Engine_Grainloom : CroneEngine {
         }).add;
 
         server.sync;
-        sample = Buffer.alloc(server,2,1);
+        sample = Buffer.alloc(server, maxFrames*2, 1);
         regenBus = Bus.audio(server,1);
         server.sync;
+
         voice = Synth(\grainloom_loop_voice,
             [\out,context.out_b,
              \inL,context.in_b[0].index,
              \inR,context.in_b[1].index,
              \buf,sample,
-             \regen_b,regenBus.index], context.xg);
+             \regen_b,regenBus.index,
+             \loop_frames,loopFrames], context.xg);
+        recorder = Synth.after(voice,\grainloom_loop_record,
+            [\buf,sample,
+             \inL,context.in_b[0].index,
+             \inR,context.in_b[1].index,
+             \feedback,feedback,
+             \dub_level,dubLevel,
+             \regen_b,regenBus.index,
+             \loop_frames,loopFrames]);
+        state = 4;
+        revision = revision+1;
 
         this.addPoll(\grainloom_state, { revision*10+state });
         this.addPoll(\grainloom_seconds, { seconds });
@@ -177,86 +213,75 @@ Engine_Grainloom : CroneEngine {
                 revision = revision+1;
             };
         });
+        // Length is now a number both heads wrap on, so it takes effect on the
+        // next sample: no reallocation, no reset, no silence, and it can be
+        // swept while playing.
+        this.addCommand(\loopLength,"f",{|msg| this.setLength(msg[1]) });
+        this.addCommand(\primeMirror,"",{|msg| this.primeMirror });
         this.addCommand(\liveLoop,"if",{|msg|
             if(msg[1] == 0) {
-                this.stopLoop;
-                queued = nil;
+                voice.set(\active,0);
+                recorder !? { recorder.set(\run,0) };
                 state = 0;
                 revision = revision+1;
-                voice.set(\active,0);
             } {
-                this.startLoop(msg[2]);
+                this.setLength(msg[2]);
+                recorder !? { recorder.set(\run,1,\dub,0) };
+                voice.set(\active,1,\write_run,1);
+                state = 4;
+                revision = revision+1;
             };
         });
     }
 
-    startLoop { |requestedLength|
-        var server = context.server;
-        var limit = requestedLength.clip(0.02,30);
-        if(state == 3) {
-            // An allocation is already in flight. Remember the newest request
-            // instead of dropping it, so a fast encoder sweep can never leave
-            // the Buffer at a different length than the parameter reports.
-            queued = limit;
-        } {
-            this.stopLoop;
-            state = 3;
-            revision = revision+1;
-            task = Routine {
-                var next, old;
-                next = Buffer.alloc(server,
-                    (server.sampleRate*limit).asInteger,1);
-                incoming = next;
-                server.sync;
-                if(alive) {
-                    old = sample;
-                    sample = next;
-                    incoming = nil;
-                    voice.set(\buf,sample,\t_reset,1,\active,1,
-                        \write_run,1);
-                    recorder = Synth.after(voice,\grainloom_loop_record,
-                        [\buf,sample,
-                         \inL,context.in_b[0].index,
-                         \inR,context.in_b[1].index,
-                         \feedback,feedback,
-                         \dub_level,dubLevel,
-                         \regen_b,regenBus.index]);
-                    seconds = limit;
-                    state = 4;
-                    revision = revision+1;
-                    retired.add(old);
-                    queued !? { |again|
-                        queued = nil;
-                        this.startLoop(again);
-                    };
-                    // The grace period must outlast the longest slice that can
-                    // still be reading `old`: slice_size 0.5 * 1.25 jitter.
-                    1.0.wait;
-                    if(alive and: { retired.includes(old) }) {
-                        old.free;
-                        retired.remove(old);
-                    };
-                } {
-                    next.free;
-                    incoming = nil;
-                };
-            }.play(SystemClock);
-        };
+    setLength { |requested|
+        var limit = requested.clip(0.02,30);
+        var frames = (context.server.sampleRate * limit).asInteger
+            .clip(2, maxFrames);
+        loopFrames = frames;
+        seconds = limit;
+        voice !? { voice.set(\loop_frames,frames) };
+        recorder !? { recorder.set(\loop_frames,frames) };
     }
 
-    stopLoop {
-        recorder !? { recorder.free; recorder = nil };
+    primeMirror {
+        // The mirror is only refreshed as the record head passes, so right
+        // after a length change the region one loop ahead still belongs to the
+        // previous length. Copying the loop into it makes forward reads correct
+        // immediately instead of after a full pass. Both the tiling and the
+        // mirror copy write outside the live loop, so this is safe while the
+        // recorder runs; at worst a copy catches a seam mid-pass.
+        var server = context.server;
+        //
+        // The recorder keeps [0, L) and its mirror [L, 2L) written for whatever
+        // L was last settled, so that is how far content is known to be good.
+        // Anything the loop has grown past it is tiled by repeated doubling,
+        // which reaches any length in a handful of copies rather than one per
+        // loop's worth.
+        task !? { task.stop };
+        task = Routine {
+            var target = loopFrames;
+            var filled = (primedFrames*2).min(target).max(2);
+            var n;
+            while { alive and: { filled < target } } {
+                n = filled.min(target - filled);
+                sample.copyData(sample, filled, 0, n);
+                server.sync;
+                filled = filled + n;
+            };
+            if(alive) {
+                sample.copyData(sample, target, 0, target);
+                primedFrames = target;
+            };
+        }.play(SystemClock);
     }
 
     free {
         alive = false;
-        queued = nil;
         task !? { task.stop };
         recorder !? { recorder.free };
         voice !? { voice.free };
         sample !? { sample.free };
         regenBus !? { regenBus.free };
-        incoming !? { incoming.free };
-        retired !? { retired.do(_.free) };
     }
 }

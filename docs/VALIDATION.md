@@ -13,7 +13,9 @@ checks:
 - K2 freeze and K3 sample on/off, including the freeze toggle moving to the
   key release, the long press starting dub only from a frozen loop, and a press
   during dub ending it without also toggling freeze;
-- the recording-length debounce and Buffer restart command;
+- recording-length edits reaching the engine immediately rather than being
+  debounced to a final value, not reallocating, and debouncing only the mirror
+  catch-up;
 - encoder dispatch across all nine pages, starting from the first, and E1
   wrapping rather than clamping at either end;
 - the window, slice-age, and bloom defaults matching the behaviour they
@@ -81,9 +83,16 @@ After installing or changing `lib/Engine_Grainloom.sc`:
     then leave dub and confirm the spiral resumes.
 16. Increase slice mix, then verify random positions, quantized pitch steps, and
    probabilistic reverse are audible.
-17. Change recording time several times quickly and confirm only the final value
-    rebuilds and clears the Buffer.
-18. Run for at least 15 minutes and check that the voice and recorder remain
+17. Sweep recording time across its range while playing and confirm the loop
+    never goes silent, is never cleared, and follows the encoder without a
+    debounce. Shortening should reframe onto the loop's opening at once;
+    lengthening should extend it with a repeat rather than with silence.
+18. Jump recording time from 0.05 s straight to 20 s and confirm the tail fills
+    with tiled material within a fraction of a second rather than staying
+    silent, and that slices near the loop end do not drop out.
+19. Freeze, then sweep recording time, and confirm the Buffer contents are still
+    not being written.
+20. Run for at least 15 minutes and check that the voice and recorder remain
     present, CPU remains stable, and JACK reports no steady-state xruns.
 
 The current engine has been compiled and loaded successfully on the target norns,

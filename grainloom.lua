@@ -26,7 +26,7 @@ local function fmt_seconds(v)
 end
 
 local page = 1
-local state = 0 -- 0 empty, 1 write frozen, 2 dubbing, 3 allocating, 4 recording
+local state = 0 -- 0 empty, 1 write frozen, 2 dubbing, 4 recording
 local seconds = 0
 local revision = 0
 local pending = true
@@ -37,7 +37,7 @@ local message = 'starting loop...'
 local timed_out = false
 local k2_handled = false
 local k2_hold_time = 0.5
-local state_poll, time_poll, refresh, resize_clock, watchdog_clock, k2_hold
+local state_poll, time_poll, refresh, mirror_clock, watchdog_clock, k2_hold
 
 local function control(id, name, min, max, warp, default, units, action)
   params:add_control(pid(id), name,
@@ -45,8 +45,8 @@ local function control(id, name, min, max, warp, default, units, action)
   if action then params:set_action(pid(id), action) end
 end
 
--- Allocation can wedge on a busy server. Without a bound on `pending` the UI
--- would sit in WAIT forever and K2/K3 would stay dead until the app reloads.
+-- The engine allocates once, at load. Without a bound on `pending` a wedged
+-- allocation would sit the UI in WAIT forever with K2/K3 dead until a reload.
 local function arm_watchdog()
   if watchdog_clock then clock.cancel(watchdog_clock) end
   watchdog_clock = clock.run(function()
@@ -58,16 +58,6 @@ local function arm_watchdog()
       message = 'loop alloc timeout'
     end
   end)
-end
-
-local function restart_loop(length)
-  pending = true
-  timed_out = false
-  writing = true
-  playing = true
-  message = 'resizing loop...'
-  arm_watchdog()
-  engine.liveLoop(1, length)
 end
 
 function init()
@@ -121,13 +111,17 @@ function init()
     function(v) engine.regen_tone(v) end)
 
   params:set_action(pid('capture_length'), function(v)
-    if resize_clock then clock.cancel(resize_clock) end
-    resize_clock = clock.run(function()
-      clock.sleep(0.4)
-      resize_clock = nil
-      -- No state guard here: a request that lands mid-allocation is queued by
-      -- the engine and applied afterwards rather than silently dropped.
-      restart_loop(v)
+    -- Length is a number both heads wrap on, so it lands on the next sample:
+    -- no reallocation, no reset, no gap, and it can be swept while playing.
+    engine.loopLength(v)
+    seconds = v
+    -- Only the mirror one loop ahead needs catching up, and only once the
+    -- encoder settles. Reads inside the loop are correct the whole time.
+    if mirror_clock then clock.cancel(mirror_clock) end
+    mirror_clock = clock.run(function()
+      clock.sleep(0.2)
+      mirror_clock = nil
+      engine.primeMirror()
     end)
   end)
 
@@ -158,7 +152,9 @@ function init()
     local rev = math.floor(v/10)
     state = v%10
     if rev > revision then
-      pending = state == 3
+      -- Any settled state from the engine means the one-time allocation
+      -- finished; length changes no longer pass through an allocating state.
+      pending = false
       timed_out = false
       if state == 4 then
         writing = true
@@ -292,7 +288,7 @@ function redraw()
 end
 
 function cleanup()
-  if resize_clock then clock.cancel(resize_clock); resize_clock = nil end
+  if mirror_clock then clock.cancel(mirror_clock); mirror_clock = nil end
   if watchdog_clock then clock.cancel(watchdog_clock); watchdog_clock = nil end
   if k2_hold then clock.cancel(k2_hold); k2_hold = nil end
   if refresh then refresh:stop() end

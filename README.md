@@ -58,11 +58,13 @@ a fresh instance sounds exactly as it did before them.
 Output level and dub level are available from PARAMETERS rather than an encoder
 page.
 
-Changing recording time clears the current loop and allocates a new Buffer after
-a 0.4-second encoder debounce. A change that arrives while an allocation is
-already running is queued and applied afterwards, so the Buffer always ends at
-the length the parameter shows. If the engine does not answer within five
-seconds, the header reads `ERR` and the keys become usable again. MIX is shown as `input:sample`: `10:0` is input
+Recording time is a wrap point rather than a Buffer size, so changing it takes
+effect on the next sample: nothing is reallocated, nothing is cleared, there is
+no gap, and it can be swept continuously while playing. Shortening reframes the
+loop onto its opening immediately; lengthening extends it with a repeat of what
+is already there, which new input then overwrites pass by pass. The engine
+allocates once, at load; if it never answers, the header reads `ERR` and the
+keys become usable again. MIX is shown as `input:sample`: `10:0` is input
 only, `5:5` is equal balance, and `0:10` is sample only.
 
 ## Signal path
@@ -73,6 +75,13 @@ input ─> feedback RecordBuf ─> Buffer ─┬─> looping PlayBuf ───�
 input ───────────────────────────────────────────────────────────────────────────────────────────────> dry
 dry + wet ─> input/sample mix ─> limiter ─> output
 ```
+
+The Buffer is twice the longest loop, and the recorder writes every sample
+twice: once at the head and once one loop ahead of it. Any read that starts
+inside the loop and runs forward by up to one loop length therefore lands on
+correctly wrapped audio, so neither the tape reader nor the slice readers need
+to know where the loop ends. It is also why the loop length can be a plain
+number both heads wrap on instead of a Buffer that must be rebuilt to resize.
 
 The record path selects the louder hardware input channel rather than summing
 left and right, avoiding mono cancellation from opposite-polarity sources. The

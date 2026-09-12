@@ -181,13 +181,41 @@ output level, and sent to the engine output.
   hold or a dub exit has already consumed does not also toggle freeze.
 - K3 (`on/off`) gates tape and slice replay. It does not gate the input branch.
 
-Changing recording time waits for a 0.4-second encoder debounce, allocates a new
-Buffer, points recorder and replay to it, and frees the previous Buffer after a
-one-second grace period. That period outlasts the longest slice that can still
-be reading the old Buffer, which is `slice size 0.5 s x 1.25 jitter`. A length
-change that arrives while an allocation is in flight is held and applied when
-that allocation completes, rather than dropped. Changing length therefore clears
-the current loop.
+## Loop length
+
+The Buffer is allocated once, at load, at twice the longest loop. Loop length is
+not its size but a number both heads wrap on, so changing it takes effect on the
+next sample: no reallocation, no reset, no gap, and it can be swept while
+playing.
+
+That works because the recorder writes every sample twice, at `phase` and at
+`phase + length`. The region one loop ahead of the head is therefore always a
+copy of the loop, and any read starting inside the loop that runs forward by up
+to one loop length lands on correctly wrapped audio. Neither the tape reader nor
+the slice readers need to know where the loop ends, and a grain or a window that
+overruns it hears the loop's beginning rather than whatever else sits in the
+Buffer. Grain duration is capped at `length / 2x` for the same reason: `2x` is
+the fastest a slice can read, so that is the longest read the mirror covers.
+
+Shortening reframes the loop onto its opening at once. Lengthening reveals the
+mirror, which is a repeat of what is already there, and new input overwrites it
+pass by pass.
+
+The mirror is only refreshed as the head passes it, so right after a length
+change the region one loop ahead still belongs to the previous length. Once the
+encoder has been still for 0.2 seconds the engine copies the loop into it,
+tiling by repeated doubling first if the loop has grown past what was known to
+be good. Those copies write outside the live loop, so they are safe while the
+recorder runs, and reads inside the loop are correct throughout -- which is why
+the length itself does not wait for them.
+
+`RecordBuf` cannot express any of this, since it always wraps at the end of its
+Buffer, so the record path is a `Phasor` driving one `BufRd` and two `BufWr`.
+The phase advances at exactly 0 or 1 frames per sample and is never lagged, so
+it stays on whole frames and the read back needs no interpolation. Freeze has to
+stop the write rather than only the head: with the phase held, a running `BufWr`
+would overwrite a single frame forever, so at `run 0` the write puts back
+exactly what it read, which is a true no-op.
 
 Unloading the app stops the recorder and replay without consulting the
 paramset, because norns also calls `cleanup` when `init` failed before the

@@ -122,24 +122,25 @@ polls.grainloom_state.callback(54)
 key(2,1); run_clocks(); assert(count('dubbing')==2)
 key(2,0); assert(count('writing')==w+1)
 
--- Recording-time edits debounce and restart once at the final length.
+-- Every recording-time edit reaches the engine immediately: length is a wrap
+-- point, not a reallocation, so a sweep is continuous rather than debounced to
+-- its final value. Nothing reallocates, so liveLoop is not called again.
+local loops = count('liveLoop')
 params:set('grainloom_capture_length',4)
 params:set('grainloom_capture_length',6)
-run_clocks()
-assert(count('liveLoop')==2)
-assert(last('liveLoop')[2]==1 and last('liveLoop')[3]==6)
-
--- A resize landing mid-allocation is queued by the engine, not dropped here.
-polls.grainloom_state.callback(63)
 params:set('grainloom_capture_length',9)
-run_clocks()
-assert(count('liveLoop')==3)
-assert(last('liveLoop')[2]==1 and last('liveLoop')[3]==9)
+assert(count('loopLength')==3)
+assert(last('loopLength')[2]==9)
+assert(count('liveLoop')==loops)
+assert(count('primeMirror')==0)     -- not before the encoder settles
 
--- The watchdog releases the UI when the engine never answers the request.
-local held = count('writing')
-key(2,1); key(2,0); assert(count('writing')==held)
+-- Only catching the mirror up is debounced, and only once for the whole sweep.
 run_clocks()
+assert(count('primeMirror')==1)
+
+-- The watchdog releases the UI if the one-time allocation never answers.
+local held = count('writing')
+polls.grainloom_state.callback(63)  -- an unknown state must not strand the UI
 key(2,1); key(2,0); assert(count('writing')==held+1)
 
 -- All nine pages dispatch valid engine controls, starting from the first.

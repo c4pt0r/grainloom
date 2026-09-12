@@ -51,6 +51,12 @@ always-running feedback loop and slice machine.
 - Every control added after the first release defaults to the behaviour it
   replaced, so defaults sound unchanged.
 
+- Recording time is a wrap point rather than a Buffer size. It applies on the
+  next sample, clears nothing, never goes silent, and can be swept while
+  playing; the Buffer is allocated once at load at twice the longest loop, and
+  the recorder mirrors every sample one loop ahead so reads past the loop end
+  wrap correctly.
+
 ### Fixes
 
 - Select the record input channel with hysteresis so near-equal left and right
@@ -60,9 +66,9 @@ always-running feedback loop and slice machine.
 - Stop reading a parameter from `cleanup`, which norns also runs after a
   failed `init`, where the paramset is empty. The lookup raised and the loop
   was never told to stop; the engine ignores the length argument anyway.
-- Queue a recording-time change that arrives during an allocation instead of
-  dropping it, and add a five-second watchdog so a wedged allocation can no
-  longer leave the interface in `WAIT` with K2 and K3 dead.
+- Add a five-second watchdog so a wedged allocation can no longer leave the
+  interface in `WAIT` with K2 and K3 dead. Recording-time changes no longer
+  allocate at all, so the queueing this originally paired with is gone too.
 
 ### Removed from the current engine
 

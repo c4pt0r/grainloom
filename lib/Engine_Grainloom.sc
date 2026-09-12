@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Minimal continuous feedback loop engine for norns.
 Engine_Grainloom : CroneEngine {
-    var voice, recorder, sample, incoming, task, retired, queued;
+    var voice, recorder, sample, incoming, task, retired, queued, regenBus;
     var state = 0, seconds = 0, revision = 0, alive = true;
     var feedback = 0.72, dubLevel = 1;
 
@@ -10,7 +10,7 @@ Engine_Grainloom : CroneEngine {
         retired = List.new;
 
         SynthDef(\grainloom_loop_record, { |buf, inL, inR,
-            feedback=0.72, run=1, dub=0, dub_level=1|
+            feedback=0.72, run=1, dub=0, dub_level=1, regen_b=0|
             var left = In.ar(inL);
             var right = In.ar(inR);
             var ampL = Amplitude.kr(left,0.01,0.05);
@@ -31,7 +31,15 @@ Engine_Grainloom : CroneEngine {
             var d = Lag.kr(dub.clip(0,1), 0.02);
             var recAmt = ((1-fb) * (1-d)) + (dub_level.clip(0,1) * d);
             var preAmt = (fb * (1-d)) + d;
-            input = Limiter.ar(LeakDC.ar(input) * 2, 0.9, 0.01);
+            // The 2x makeup belongs to the quiet hardware input only. Applying
+            // it to the fold-back too would make the loop gain 2*regen*(1-fb)
+            // and send anything above regen 0.5 divergent.
+            //
+            // Dub gets no fold-back at all: its preLevel is 1, so adding the
+            // Buffer's own output on top of a fully retained pass is a loop
+            // gain above unity by construction.
+            input = LeakDC.ar(input) * 2;
+            input = Limiter.ar(input + (In.ar(regen_b) * (1-d)), 0.9, 0.01);
             RecordBuf.ar(input, buf,
                 recLevel: recAmt,
                 preLevel: preAmt,
@@ -45,12 +53,32 @@ Engine_Grainloom : CroneEngine {
             active=0, t_reset=0, rate=1, mix=0.8,
             sample_gain=1.5, gain=0.75, slice_size=0.2,
             slice_density=5, slice_speed=1.5, slice_reverse=0.35,
-            slice_mix=0.5|
+            slice_mix=0.5, window_start=0, window_size=1,
+            slice_age=0, slice_spread=1, bloom=0, bloom_time=4,
+            write_run=1, regen=0, regen_tone=4000, regen_b=0|
             var dry = [In.ar(inL),In.ar(inR)];
-            var loop = PlayBuf.ar(1,buf,
-                Lag.kr(rate,0.04) * BufRateScale.kr(buf),
-                t_reset, 0, 1);
-            var density = slice_density.clip(1,8);
+            var frames = BufFrames.kr(buf).max(1);
+            var scale = BufRateScale.kr(buf);
+            // Bloom grows into the gaps: `quiet` rises as the input falls away
+            // over bloom_time and sits at zero while anything is being played.
+            var inAmp = Amplitude.kr((dry[0]+dry[1])*0.5,
+                0.05, Lag.kr(bloom_time,0.1));
+            var bl = Lag.kr(bloom,0.05).clip(0,1)
+                * (1 - (inAmp*6).clip(0,1));
+            // Tape reads a window of the Buffer rather than always all of it,
+            // so Phasor+BufRd replaces PlayBuf, which only loops the whole
+            // Buffer. A window running past the end wraps: BufRd loops indices.
+            var wStart = Lag.kr(window_start,0.05).clip(0,1) * frames;
+            var wLen = (Lag.kr(window_size,0.05).clip(0.001,1) * frames).max(2);
+            var phase = Phasor.ar(t_reset, Lag.kr(rate,0.04) * scale,
+                wStart, wStart+wLen, wStart);
+            var loop = BufRd.ar(1, buf, phase, 1, 4);
+            // The record head's position, rebuilt: it advances one frame per
+            // sample whenever the recorder runs, and freeze stops both. Not
+            // lagged, so repeated freezing cannot drift it out of alignment.
+            var wPhase = A2K.kr(Phasor.ar(t_reset, write_run * scale,
+                0, frames, 0)) / frames;
+            var density = (slice_density.clip(1,8) * (1 - (0.5*bl))).max(0.25);
             var trigA = Impulse.kr(density);
             var trigB = Impulse.kr(density*0.79,0.5);
             var maxSpeed = slice_speed.clip(0.5,2);
@@ -62,38 +90,62 @@ Engine_Grainloom : CroneEngine {
             var speedB = Select.kr(
                 TIRand.kr(0,maxSpeedIndex,trigB),speedRatios)
                 * Select.kr(TRand.kr(0,1,trigB)<slice_reverse,[1,-1]);
+            // Slice positions are anchored to the moving record head, so `age`
+            // means a fixed distance into the past rather than a fixed spot in
+            // the Buffer. age 0 with spread 1 is a uniform draw over the whole
+            // Buffer, which is what the readers did before.
+            var age = Lag.kr(slice_age,0.05).clip(0,1);
+            var spread = Lag.kr(slice_spread,0.05).clip(0,1);
+            var size = slice_size.clip(0.06,0.5) * (1 + bl);
+            var posA = (wPhase - age - (TRand.kr(0,1,trigA)*spread)).wrap(0,1);
+            var posB = (wPhase - age - (TRand.kr(0,1,trigB)*spread)).wrap(0,1);
             var sliceA = GrainBuf.ar(2,trigA,
-                slice_size.clip(0.06,0.5)*TRand.kr(0.75,1.25,trigA),
-                buf,speedA,TRand.kr(0,1,trigA),2,
+                size*TRand.kr(0.75,1.25,trigA),
+                buf,speedA,posA,2,
                 TRand.kr(-0.85,0.85,trigA),-1,8);
             var sliceB = GrainBuf.ar(2,trigB,
-                slice_size.clip(0.06,0.5)*TRand.kr(0.75,1.25,trigB),
-                buf,speedB,TRand.kr(0,1,trigB),2,
+                size*TRand.kr(0.75,1.25,trigB),
+                buf,speedB,posB,2,
                 TRand.kr(-0.85,0.85,trigB),-1,8);
             var slices = LeakDC.ar((sliceA+sliceB)*0.6);
-            var replay = XFade2.ar(loop!2,slices,
-                Lag.kr(slice_mix,0.04)*2-1);
-            var wet = replay * Lag.kr(sample_gain,0.04)
-                * Lag.kr(active,0.02);
+            var setMix = Lag.kr(slice_mix,0.04);
+            // Bloom also leans the balance towards the slice layer.
+            var mixEff = (setMix + ((1-setMix) * bl * 0.8)).clip(0,1);
+            var replay = XFade2.ar(loop!2,slices,mixEff*2-1);
+            var gate = Lag.kr(active,0.02);
+            // Regen folds the tape reader back into the record input, which is
+            // what makes varispeed accumulate into a pitch spiral. The lowpass
+            // is the stability mechanism rather than a colour: every generation
+            // loses top end, so an upward spiral runs into a wall instead of
+            // piling up at Nyquist. The amount is capped below unity so the
+            // circulation gain fb + regen*(1-fb) stays under one.
+            var fold = LPF.ar(loop, Lag.kr(regen_tone,0.05).clip(200,8000))
+                * (Lag.kr(regen,0.05).clip(0,1) * 0.9) * gate;
+            var wet = replay * Lag.kr(sample_gain,0.04) * gate;
             var signal = XFade2.ar(dry,wet,Lag.kr(mix,0.04)*2-1);
             signal = Limiter.ar(LeakDC.ar(signal),0.95);
+            ReplaceOut.ar(regen_b, fold);
             Out.ar(out,signal * Lag.kr(gain,0.05));
         }).add;
 
         server.sync;
         sample = Buffer.alloc(server,2,1);
+        regenBus = Bus.audio(server,1);
         server.sync;
         voice = Synth(\grainloom_loop_voice,
             [\out,context.out_b,
              \inL,context.in_b[0].index,
              \inR,context.in_b[1].index,
-             \buf,sample], context.xg);
+             \buf,sample,
+             \regen_b,regenBus.index], context.xg);
 
         this.addPoll(\grainloom_state, { revision*10+state });
         this.addPoll(\grainloom_seconds, { seconds });
 
         [\rate,\mix,\sample_gain,\gain,\slice_size,\slice_density,
-            \slice_speed,\slice_reverse,\slice_mix].do { |name|
+            \slice_speed,\slice_reverse,\slice_mix,
+            \window_start,\window_size,\slice_age,\slice_spread,
+            \bloom,\bloom_time,\regen,\regen_tone].do { |name|
             this.addCommand(name,"f",{|msg| voice.set(name,msg[1]) });
         };
         this.addCommand(\feedback,"f",{|msg|
@@ -109,6 +161,7 @@ Engine_Grainloom : CroneEngine {
                 var on = msg[1].clip(0,1);
                 // Dub runs the record head; ending it re-freezes in place.
                 recorder.set(\dub,on,\run,on);
+                voice.set(\write_run,on);
                 state = if(on == 0,1,2);
                 revision = revision+1;
             };
@@ -119,6 +172,7 @@ Engine_Grainloom : CroneEngine {
         this.addCommand(\writing,"i",{|msg|
             recorder !? {
                 recorder.set(\run,msg[1].clip(0,1),\dub,0);
+                voice.set(\write_run,msg[1].clip(0,1));
                 state = if(msg[1] == 0,1,4);
                 revision = revision+1;
             };
@@ -138,7 +192,7 @@ Engine_Grainloom : CroneEngine {
 
     startLoop { |requestedLength|
         var server = context.server;
-        var limit = requestedLength.clip(0.1,30);
+        var limit = requestedLength.clip(0.02,30);
         if(state == 3) {
             // An allocation is already in flight. Remember the newest request
             // instead of dropping it, so a fast encoder sweep can never leave
@@ -158,13 +212,15 @@ Engine_Grainloom : CroneEngine {
                     old = sample;
                     sample = next;
                     incoming = nil;
-                    voice.set(\buf,sample,\t_reset,1,\active,1);
+                    voice.set(\buf,sample,\t_reset,1,\active,1,
+                        \write_run,1);
                     recorder = Synth.after(voice,\grainloom_loop_record,
                         [\buf,sample,
                          \inL,context.in_b[0].index,
                          \inR,context.in_b[1].index,
                          \feedback,feedback,
-                         \dub_level,dubLevel]);
+                         \dub_level,dubLevel,
+                         \regen_b,regenBus.index]);
                     seconds = limit;
                     state = 4;
                     revision = revision+1;
@@ -199,6 +255,7 @@ Engine_Grainloom : CroneEngine {
         recorder !? { recorder.free };
         voice !? { voice.free };
         sample !? { sample.free };
+        regenBus !? { regenBus.free };
         incoming !? { incoming.free };
         retired !? { retired.do(_.free) };
     }

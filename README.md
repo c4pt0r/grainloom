@@ -28,11 +28,15 @@ Turn E1 to select a page. E2 and E3 edit its controls.
 
 | Page | E2 | E3 |
 | --- | --- | --- |
-| LOOP | recording time (0.1–30 s) | feedback (0–0.98) |
+| LOOP | recording time (20 ms–30 s) | feedback (0–0.98) |
+| WINDOW | window start | window size (1–100%) |
 | TAPE | tape speed/direction (-2×–2×) | input:sample mix |
+| REGEN | regen | regen tone (200 Hz–8 kHz) |
 | SLICE | slice size (0.06–0.5 s) | slice density (1–8 Hz) |
+| SLICE POS | slice age | slice spread |
 | SLICE PLAY | quantized speed ceiling (0.5×–2×) | reverse probability |
 | LEVEL | tape:slice mix | sample level (0.25×–4×) |
+| BLOOM | bloom | bloom time (0.5–10 s) |
 
 - K2 **freeze**: a short press freezes/resumes the record head. Playback
   continues while frozen.
@@ -45,9 +49,12 @@ Turn E1 to select a page. E2 and E3 edit its controls.
 Because K2 now carries two gestures, its freeze toggle acts on the release
 rather than the press.
 
-Defaults: 2.5 seconds, 0.72 feedback, normal tape speed, 2:8 input:sample
-balance, 50% tape:slice mix, 0.2-second slices at 5 Hz, 1.5× quantized
-speed ceiling, 35% reverse probability, 1.5× sample level, and 0.75 output.
+Defaults: 2.5 seconds, 0.72 feedback, the full Buffer as the tape window,
+normal tape speed, 2:8 input:sample balance, 50% tape:slice mix, 0.2-second
+slices at 5 Hz, age 0 with full spread, 1.5× quantized speed ceiling, 35%
+reverse probability, no bloom, 1.5× sample level, and 0.75 output. Every
+control added after the first release defaults to the behaviour it replaced, so
+a fresh instance sounds exactly as it did before them.
 Output level and dub level are available from PARAMETERS rather than an encoder
 page.
 
@@ -82,12 +89,47 @@ repeated layers accumulate the way they do on any overdubbing looper; the final
 limiter is what keeps the output in range. Ending dub freezes the head where it
 stands, so the layer stays aligned with the loop.
 
-The optional slice layer runs two asynchronous, windowed readers at random Buffer
-positions. Every slice chooses a musical tape-speed ratio from `0.5×`, `2/3×`,
+Recording time reaches down to 20 ms, which is an audio rate rather than a loop
+length. Below roughly 50 ms the Buffer stops being a phrase and becomes a
+waveform: the repetition itself is the pitch, feedback becomes its decay, and
+dub becomes additive synthesis on top of it. The control is exponential so the
+short end is reachable.
+
+The tape reader plays a window of the Buffer rather than always the whole of it.
+`window start` places it and `window size` sets its length, down to one percent;
+a small window is a stutter, and opening it up returns to the full loop. The
+record head keeps circling the entire Buffer underneath, so a narrow window is
+continually refilled with material from outside it. A window that runs past the
+end of the Buffer wraps.
+
+The optional slice layer runs two asynchronous, windowed readers whose positions
+are anchored to the moving record head. `slice age` sets how far into the past
+they reach and `slice spread` how wide a span they draw from, so "one second
+ago" stays one second ago instead of meaning a fixed spot in the Buffer. At age
+0 with full spread the draw is uniform across the whole Buffer, which is what
+the readers did before. Every slice chooses a musical tape-speed ratio from `0.5×`, `2/3×`,
 `0.75×`, `1×`, `4/3×`, `1.5×`, and `2×`, limited by `quantized speed max`;
 `reverse chance` independently reverses slices. Density is capped at 8 Hz per
 stream and each reader is capped at eight concurrent grains. Slices mix only into
 replay and never feed the record Buffer.
+
+`regen` folds the tape reader back into the record input, which is what turns
+varispeed into accumulation: at any speed but 1× each circulation is re-recorded
+shifted, and the loop climbs or sinks through itself. Three things keep that
+from running away. `regen tone` is a lowpass in the fold-back path and never
+opens fully, so every generation loses top end and an upward spiral hits a wall
+instead of piling up near Nyquist. The 2× capture makeup applies only to the
+hardware input, not the fold-back, which would otherwise double the loop gain.
+And dub suppresses regen entirely, because dub already retains the whole
+previous pass and adding the Buffer's own output on top of that is above unity
+by construction. The amount is also capped below one internally.
+
+Turning E1 wraps from the last page back to the first.
+
+`bloom` makes the machine answer silence. An envelope follower on the input
+falls away over `bloom time`; as it does, slices grow longer, thin out, and take
+over more of the tape:slice balance, and they retreat the moment anything is
+played. At its default of zero it does nothing at all.
 
 Slices are output-only: they never feed the record Buffer, so increasing slice
 mix cannot create an uncontrolled feedback stack. The final limiter protects the

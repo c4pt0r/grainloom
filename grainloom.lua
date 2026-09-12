@@ -3,18 +3,27 @@
 engine.name = 'Grainloom'
 
 local cs = require 'controlspec'
-local util = require 'util'
 
 local function pid(id) return 'grainloom_'..id end
 local function pget(id) return params:get(pid(id)) end
 
 local pages = {
   {'LOOP', 'capture_length', 'feedback'},
+  {'WINDOW', 'window_start', 'window_size'},
   {'TAPE', 'rate', 'mix'},
+  {'REGEN', 'regen', 'regen_tone'},
   {'SLICE', 'slice_size', 'slice_density'},
+  {'SLICE POS', 'slice_age', 'slice_spread'},
   {'SLICE PLAY', 'slice_speed', 'slice_reverse'},
-  {'LEVEL', 'slice_mix', 'sample_gain'}
+  {'LEVEL', 'slice_mix', 'sample_gain'},
+  {'BLOOM', 'bloom', 'bloom_time'}
 }
+
+-- The loop now reaches into audio rates, where seconds read as 0.0.
+local function fmt_seconds(v)
+  if v < 1 then return string.format('%.0fms', v*1000) end
+  return string.format('%.1fs', v)
+end
 
 local page = 1
 local state = 0 -- 0 empty, 1 write frozen, 2 dubbing, 3 allocating, 4 recording
@@ -64,7 +73,10 @@ end
 function init()
   params:add_separator('grainloom')
 
-  control('capture_length', 'recording time', 0.1, 30, 'lin', 2.5, 's')
+  control('capture_length', 'recording time', 0.02, 30, 'exp', 2.5, 's')
+  params:lookup_param(pid('capture_length')).formatter = function(param)
+    return fmt_seconds(param:get())
+  end
   control('feedback', 'feedback', 0, 0.98, 'lin', 0.72, '',
     function(v) engine.feedback(v) end)
   control('rate', 'tape speed', -2, 2, 'lin', 1, 'x',
@@ -91,6 +103,22 @@ function init()
     function(v) engine.gain(v) end)
   control('dub_level', 'dub level', 0, 1, 'lin', 1, '',
     function(v) engine.dub_level(v) end)
+  control('window_start', 'window start', 0, 1, 'lin', 0, '',
+    function(v) engine.window_start(v) end)
+  control('window_size', 'window size', 0.01, 1, 'exp', 1, '',
+    function(v) engine.window_size(v) end)
+  control('slice_age', 'slice age', 0, 1, 'lin', 0, '',
+    function(v) engine.slice_age(v) end)
+  control('slice_spread', 'slice spread', 0, 1, 'lin', 1, '',
+    function(v) engine.slice_spread(v) end)
+  control('bloom', 'bloom', 0, 1, 'lin', 0, '',
+    function(v) engine.bloom(v) end)
+  control('bloom_time', 'bloom time', 0.5, 10, 'exp', 4, 's',
+    function(v) engine.bloom_time(v) end)
+  control('regen', 'regen', 0, 1, 'lin', 0, '',
+    function(v) engine.regen(v) end)
+  control('regen_tone', 'regen tone', 200, 8000, 'exp', 4000, 'Hz',
+    function(v) engine.regen_tone(v) end)
 
   params:set_action(pid('capture_length'), function(v)
     if resize_clock then clock.cancel(resize_clock) end
@@ -115,6 +143,14 @@ function init()
   engine.slice_mix(pget('slice_mix'))
   engine.gain(pget('gain'))
   engine.dub_level(pget('dub_level'))
+  engine.window_start(pget('window_start'))
+  engine.window_size(pget('window_size'))
+  engine.slice_age(pget('slice_age'))
+  engine.slice_spread(pget('slice_spread'))
+  engine.bloom(pget('bloom'))
+  engine.bloom_time(pget('bloom_time'))
+  engine.regen(pget('regen'))
+  engine.regen_tone(pget('regen_tone'))
 
   state_poll = poll.set('grainloom_state')
   state_poll.time = 0.1
@@ -158,7 +194,7 @@ end
 
 function enc(n, d)
   if n == 1 then
-    page = util.clamp(page+d, 1, #pages)
+    page = (page - 1 + d) % #pages + 1
   elseif n == 2 or n == 3 then
     params:delta(pid(pages[page][n]), d)
   end
@@ -229,7 +265,7 @@ function redraw()
   if not playing then status = 'OFF' end
   if dubbing then status = 'DUB' end
   if timed_out then status = 'ERR' end
-  screen.text_right(status..string.format(' %.1fs', seconds))
+  screen.text_right(status..' '..fmt_seconds(seconds))
 
   screen.level(5)
   screen.move(0, 22)

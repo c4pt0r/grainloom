@@ -14,7 +14,10 @@ checks:
   key release, the long press starting dub only from a frozen loop, and a press
   during dub ending it without also toggling freeze;
 - the recording-length debounce and Buffer restart command;
-- encoder dispatch across all five pages;
+- encoder dispatch across all nine pages, starting from the first, and E1
+  wrapping rather than clamping at either end;
+- the window, slice-age, and bloom defaults matching the behaviour they
+  replaced, and the sub-second recording-time formatter;
 - a recording-length change that arrives mid-allocation still reaching the
   engine, and the watchdog re-enabling the keys when no answer comes back;
 - poll, metro, clock, and cleanup behavior, including `cleanup` running after
@@ -58,11 +61,29 @@ After installing or changing `lib/Engine_Grainloom.sc`:
    rather than replacing it. Press K2 and confirm recording stops, the header
    returns to `FREEZE`, and the dubbed layer stays in time with the loop.
 9. Sweep tape speed through positive, zero, and negative values.
-10. Increase slice mix, then verify random positions, quantized pitch steps, and
+10. Close `window size` and confirm the tape voice becomes a stutter inside the
+    loop while the record head keeps refilling the rest of the Buffer; sweep
+    `window start` across the wrap point and confirm no dropout or out-of-range
+    read.
+11. Set recording time to 20 ms and confirm the loop is heard as a pitch that
+    tracks tape speed, that feedback acts as its decay, and that dub layers onto
+    it without runaway level.
+12. Raise `slice age` and confirm slices move into older material while staying
+    a constant distance behind the live input; narrow `slice spread` and confirm
+    they converge on one moment rather than one fixed Buffer position.
+13. Raise `bloom`, stop playing, and confirm the slice layer grows over
+    `bloom time` and retreats as soon as input returns.
+14. Raise `regen` to maximum at feedback 0.98 with tape speed 2x, play a short
+    loud burst, and confirm the loop climbs and then dies away rather than
+    accumulating into a rising screech; repeat at -2x. Close `regen tone` and
+    confirm the spiral dulls faster. Confirm no output-limiter pumping at rest.
+15. With `regen` at maximum, enter dub and confirm the level does not run away,
+    then leave dub and confirm the spiral resumes.
+16. Increase slice mix, then verify random positions, quantized pitch steps, and
    probabilistic reverse are audible.
-11. Change recording time several times quickly and confirm only the final value
+17. Change recording time several times quickly and confirm only the final value
     rebuilds and clears the Buffer.
-12. Run for at least 15 minutes and check that the voice and recorder remain
+18. Run for at least 15 minutes and check that the voice and recorder remain
     present, CPU remains stable, and JACK reports no steady-state xruns.
 
 The current engine has been compiled and loaded successfully on the target norns,

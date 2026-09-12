@@ -54,7 +54,12 @@ function run_clocks()
   table.sort(ids)
   for _,i in ipairs(ids) do jobs[i]() end
 end
-screen=setmetatable({}, {__index=function() return function() end end})
+screen=setmetatable({texts={}}, {__index=function(t,k)
+  if k=='text' or k=='text_right' then
+    return function(v) table.insert(t.texts, tostring(v)) end
+  end
+  return function() end
+end})
 function count(name)
   local n=0; for _,c in ipairs(calls) do if c[1]==name then n=n+1 end end
   return n
@@ -78,6 +83,15 @@ assert(last('slice_speed')[2]==1.5)
 assert(last('slice_reverse')[2]==0.35)
 assert(last('slice_mix')[2]==0.5)
 assert(last('dub_level')[2]==1)
+-- New controls default to the behaviour they replaced: the whole Buffer as the
+-- tape window, a uniform slice draw, and bloom fully out of the way.
+assert(last('window_start')[2]==0 and last('window_size')[2]==1)
+assert(last('slice_age')[2]==0 and last('slice_spread')[2]==1)
+assert(last('bloom')[2]==0 and last('bloom_time')[2]==4)
+assert(last('regen')[2]==0 and last('regen_tone')[2]==4000)
+assert(definitions.grainloom_capture_length.spec.min==0.02)
+assert(definitions.grainloom_capture_length.formatter({get=function() return 0.02 end})=='20ms')
+assert(definitions.grainloom_capture_length.formatter({get=function() return 2.5 end})=='2.5s')
 assert(last('liveLoop')[2]==1 and last('liveLoop')[3]==2.5)
 assert(definitions.grainloom_mix.formatter({get=function() return 0 end})=='10:0')
 assert(definitions.grainloom_mix.formatter({get=function() return 1 end})=='0:10')
@@ -128,10 +142,32 @@ key(2,1); key(2,0); assert(count('writing')==held)
 run_clocks()
 key(2,1); key(2,0); assert(count('writing')==held+1)
 
--- All five pages dispatch valid engine controls.
+-- All nine pages dispatch valid engine controls, starting from the first.
 polls.grainloom_state.callback(73)
 polls.grainloom_state.callback(84)
-for i=1,5 do enc(1,1); enc(2,1); enc(3,-1); redraw() end
+function page_label()
+  screen.texts = {}
+  redraw()
+  for _,t in ipairs(screen.texts) do
+    local n = t:match('^(%d+)/9 ')
+    if n then return tonumber(n) end
+  end
+end
+function goto_page1()
+  for _=1,20 do
+    if page_label()==1 then return end
+    enc(1,1)
+  end
+  error('E1 never reached page 1 in 20 steps: does it wrap instead of clamp?')
+end
+goto_page1()
+for i=1,9 do enc(2,1); enc(3,-1); redraw(); enc(1,1) end
+
+-- E1 wraps rather than clamping, so nine pages stay reachable in both
+-- directions without scrolling the whole way back.
+goto_page1()
+enc(1,-1); assert(page_label()==9)
+enc(1,1);  assert(page_label()==1)
 
 -- cleanup() also runs after a failed init(), where no param was ever added.
 -- It must still stop the loop instead of raising on a missing paramset index.
@@ -140,4 +176,4 @@ cleanup()
 assert(last('liveLoop')[2]==0)
 assert(polls.grainloom_state.stopped and polls.grainloom_seconds.stopped)
 ''')
-print("PASS: minimal loop controls, freeze/on-off keys, resize debounce,\n      queued resize, allocation watchdog,\n      K2 long-press dub, cleanup after failed init")
+print("PASS: minimal loop controls, freeze/on-off keys, resize debounce,\n      queued resize, allocation watchdog,\n      K2 long-press dub,\n      window/age/bloom/regen defaults, page wrap,\n      cleanup after failed init")

@@ -34,6 +34,23 @@ always-running feedback loop and slice machine.
   of K2 ends it and refreezes in place. Adds a `dub level` parameter, available
   from PARAMETERS.
 
+- Recording time reaches down to 20 ms, turning short loops into audio-rate
+  waveforms where repetition is pitch, feedback is decay, and dub is additive
+  synthesis. The control is now exponential.
+- Tape reads a window of the Buffer (`window start`, `window size`) instead of
+  always the whole of it, via `Phasor`/`BufRd` in place of `PlayBuf`.
+- Slice positions are anchored to the moving record head, with `slice age` as a
+  distance into the past and `slice spread` as the span drawn from.
+- `bloom` grows the slice layer into silences and withdraws it when anything is
+  played, over `bloom time`.
+- `regen` folds the tape reader back into the record input, so varispeed
+  accumulates into a spiral, bounded by a lowpass in the send path
+  (`regen tone`), by keeping the capture makeup off the fold-back, and by
+  suppressing the send entirely during dub.
+- Nine encoder pages, adding WINDOW, REGEN, SLICE POS, and BLOOM. E1 wraps.
+- Every control added after the first release defaults to the behaviour it
+  replaced, so defaults sound unchanged.
+
 ### Fixes
 
 - Select the record input channel with hysteresis so near-equal left and right
@@ -53,7 +70,9 @@ always-running feedback loop and slice machine.
 - AUTO, DELAY, LOOPER, and other memory modes.
 - Generation loss, dropout, wow/flutter, bit-crush, glitch, scan, and internal
   reverb.
-- Resampling generations and `print next generation`.
+- Resampling generations and `print next generation`. The bounded `regen` send
+  added later is a different mechanism: one audio-rate fold-back with a fixed
+  stability budget, not a rendered chain of generations.
 
 ## v0.1.0 — 2026-09-10
 

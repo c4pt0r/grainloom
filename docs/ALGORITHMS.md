@@ -57,6 +57,91 @@ Any press of K2 ends dub, which stops the head where it stands and returns to
 the frozen state. The plain freeze toggle also clears dub, so the two gestures
 cannot leave the recorder in a mixed mode.
 
+## Tape window
+
+The tape voice reads a window of the Buffer rather than always the whole of it,
+so `PlayBuf` is replaced by `Phasor` driving `BufRd`; `PlayBuf` can only loop an
+entire Buffer. `window start` and `window size` become the Phasor's bounds, and
+`BufRd` loops its index, so a window running past the end of the Buffer wraps
+around to the beginning instead of reading out of range. The window floor is two
+frames, which at short recording times is an audio-rate buzz rather than a loop.
+
+The record head is unaffected and keeps circling the entire Buffer, so a narrow
+window is continually refilled with material written outside it.
+
+## Audio-rate loops
+
+Recording time reaches down to 20 ms. Below roughly 50 ms the Buffer stops being
+a phrase and becomes a waveform: the loop's own repetition rate is the pitch,
+feedback is its decay, and dub is additive synthesis onto it. Nothing in the
+engine special-cases this; it is the same circular Buffer read faster than the
+ear resolves as rhythm. The Lua control is exponential so the short end is
+actually reachable with an encoder.
+
+## Slice position and age
+
+Slice positions are anchored to the record head rather than drawn uniformly from
+the Buffer. The head's position is not exposed by `RecordBuf`, so the voice
+rebuilds it: a `Phasor` advancing one frame per sample whenever the recorder
+runs, gated by the same `write_run` value the engine gives the recorder's `run`,
+and reset by the same trigger. It is deliberately not lagged, so repeated
+freezing cannot drift it out of alignment with the real head.
+
+Each slice then draws:
+
+```text
+pos = wrap(write_head - age - random(0, spread), 0, 1)
+```
+
+`age` is therefore a distance into the past that stays constant as the head
+moves, rather than a fixed spot in the Buffer, and `spread` is the width of the
+span drawn from. At `age 0, spread 1` the expression is a uniform draw over the
+whole Buffer, which is exactly what the readers did before.
+
+## Bloom
+
+`bloom` couples the slice layer inversely to the input. An `Amplitude` follower
+on the hardware input releases over `bloom time`; the complement of that, scaled
+by `bloom`, is a value that rises as playing stops and returns to zero as soon
+as anything is played. It lengthens slices up to 2x, thins density to as little
+as half, and leans the tape/slice balance towards slices by up to 80% of the
+remaining distance. At `bloom 0` every one of those terms cancels.
+
+The size and density moves are deliberately opposed so the concurrent grain
+count cannot climb: at the extremes it lands near five per reader, inside the
+eight-grain cap.
+
+## Regen
+
+`regen` folds the tape reader's output back into the record input, so the Buffer
+feeds itself. At any tape speed but 1x each circulation is re-recorded shifted,
+and the loop spirals through itself; at 1x it is a fixed-offset delay between
+the read and write heads.
+
+The voice and the recorder are separate Synths, so the send travels over a
+private audio Bus written with `ReplaceOut` and read with `In`. The voice
+already runs before the recorder in the node graph, so the recorder reads the
+value the voice wrote in the same block.
+
+Three things bound it, and all three are structural rather than advisory:
+
+- `regen tone` is a lowpass in the fold-back path, clipped to 8 kHz at the top.
+  Every generation therefore loses top end, and an upward varispeed spiral runs
+  into a falling ceiling instead of accumulating near Nyquist.
+- The 2x capture makeup is applied to the hardware input alone. Folding it into
+  the send as well would make the circulation gain `2*regen*(1-fb)`, which
+  diverges above `regen 0.5`.
+- Dub multiplies the send by `1-dub`. Dub's `preLevel` is 1, so adding the
+  Buffer's own output to a fully retained pass is a gain above unity by
+  construction.
+
+With those in place the circulation gain is `fb + regen*(1-fb)`, and the amount
+is capped at 0.9 internally so it stays below one even at maximum feedback. The
+existing 0.9 limiter on the record input bounds the level regardless.
+
+Regen is gated by `active`, so K3 stops the machine feeding itself as well as
+stopping replay.
+
 ## Random slices
 
 Two asynchronous `GrainBuf` streams read the same live Buffer. Their trigger
